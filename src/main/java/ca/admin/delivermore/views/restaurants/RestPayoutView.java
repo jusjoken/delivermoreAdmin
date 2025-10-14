@@ -74,7 +74,8 @@ public class RestPayoutView extends Main {
         LocalDate nowDate = LocalDate.now();
         LocalDate prevSun = nowDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
         prevSun = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
-        LocalDate startOfLastWeek = prevSun.minusWeeks(1);
+        //KEB - 2025-10-14 - subtract 2 weeks for rest payout as we now hold back 1 week
+        LocalDate startOfLastWeek = prevSun.minusWeeks(2);
         LocalDate endOfLastWeek = startOfLastWeek.plusDays(6);
         defaultStartDate = startOfLastWeek;
         defaultEndDate = endOfLastWeek;
