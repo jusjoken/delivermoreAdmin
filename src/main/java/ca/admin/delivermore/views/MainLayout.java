@@ -6,6 +6,8 @@ import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
 import ca.admin.delivermore.security.AuthenticatedUser;
 import ca.admin.delivermore.views.about.AboutView;
+import ca.admin.delivermore.views.asset.TabletAssetHistoryView;
+import ca.admin.delivermore.views.asset.TabletAssetsView;
 import ca.admin.delivermore.views.drivers.*;
 import ca.admin.delivermore.views.home.HomeView;
 import ca.admin.delivermore.views.intuit.QBOConnectView;
@@ -140,6 +142,8 @@ public class MainLayout extends AppLayout {
                 || checkAccess(QBOConnectView.class)
                 || checkAccess(DriverAdjustmentTemplateView.class)
                 || checkAccess(GiftCardView.class)
+                || checkAccess(TabletAssetsView.class)
+                || checkAccess(TabletAssetHistoryView.class)
                 || checkAccess(TasksView.class)) {
             SideNavItem utilities = new SideNavItem("Utilities");
             utilities.setPrefixComponent(VaadinIcon.FOLDER_OPEN.create());
@@ -173,6 +177,14 @@ public class MainLayout extends AppLayout {
                 SideNavItem giftCardListMenu = new SideNavItem("Gift Card List", GiftCardView.class, VaadinIcon.CREDIT_CARD.create());
                 //SideNavItem giftCardListMenu = new SideNavItem("Gift Card List", GiftCardView.class, "la la-credit-card");
                 utilities.addItem(giftCardListMenu);
+            }
+            if (checkAccess(TabletAssetsView.class)) {
+                SideNavItem assetListMenu = new SideNavItem("Asset Manager", TabletAssetsView.class, VaadinIcon.TABLET.create());
+                utilities.addItem(assetListMenu);
+            }
+            if (checkAccess(TabletAssetHistoryView.class)) {
+                SideNavItem assetListMenu = new SideNavItem("Asset History Browser", TabletAssetHistoryView.class, VaadinIcon.TABLET.create());
+                utilities.addItem(assetListMenu);
             }
             if(oAuth2Configuration.isConfigured()){
                 if (checkAccess(QBOConnectView.class)) {
