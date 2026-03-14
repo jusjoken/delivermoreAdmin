@@ -23,3 +23,4 @@ webpack.generated.js
 /global_restaurants_orders.csv.old
 /*.zip
 logs
+.env

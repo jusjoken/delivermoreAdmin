@@ -43,7 +43,8 @@ public class ButtonTextField extends CustomField<String> {
 
     @Override
     public void setReadOnly(boolean readOnly) {
-        super.setReadOnly(readOnly);
+        ((com.vaadin.flow.component.AbstractField<?, ?>) this).setReadOnly(readOnly);
+        // super.setReadOnly(readOnly);
         layout.removeAll();
         if(readOnly){
             textField.setReadOnly(true);

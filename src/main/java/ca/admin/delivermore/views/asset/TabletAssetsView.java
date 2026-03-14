@@ -14,6 +14,7 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -29,7 +30,7 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
-import com.vaadin.flow.function.ValueProvider;
+import com.vaadin.flow.data.provider.SortDirection;
 
 import jakarta.annotation.security.RolesAllowed;
 
@@ -37,8 +38,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -85,20 +84,40 @@ public class TabletAssetsView extends VerticalLayout {
 
         Button refreshBtn = new Button("Refresh", e -> refresh());
 
-        return new HorizontalLayout(newBtn, refreshBtn);
+        //add a count of unarchived assets
+        Span count = new Span();
+        count.getStyle().set("margin-left", "auto");
+        refreshBtn.addClickListener(e -> {
+            refresh();
+            long total = assetRepo.countByArchivedFalse();
+            count.setText(total + " total");
+        });
+        refreshBtn.click(); // trigger initial count display
+        return new HorizontalLayout(newBtn, refreshBtn, count);
     }
 
     private void configureGrid() {
         grid.removeAllColumns();
 
-        grid.addColumn(TabletAsset::getAssetName).setHeader("Name").setAutoWidth(true);
-        grid.addColumn(TabletAsset::getAssetTag).setHeader("Asset tag").setAutoWidth(true);
+        Grid.Column<TabletAsset> nameCol = grid.addColumn(TabletAsset::getAssetName).setHeader("Name").setAutoWidth(true).setSortable(true);
+        Grid.Column<TabletAsset> tagCol = grid.addColumn(TabletAsset::getAssetTag)
+                .setHeader("Asset tag")
+                .setAutoWidth(true)
+                .setSortable(true)
+                .setComparator((a, b) -> compareNatural(safeString(a.getAssetTag()), safeString(b.getAssetTag())));
+
+        // Set default sort order after columns are added
+        grid.sort(List.of(
+                new GridSortOrder<>(tagCol, SortDirection.ASCENDING),
+                new GridSortOrder<>(nameCol, SortDirection.ASCENDING)
+        ));
 
         grid.addColumn(asset -> resolveDriverNameFromCache(asset.getAssignedFleetId()))
                 .setHeader("Assigned to")
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setSortable(true);
 
-        grid.addColumn(TabletAsset::getRestaurantName).setHeader("Restaurant / location").setAutoWidth(true);
+        grid.addColumn(TabletAsset::getRestaurantName).setHeader("Restaurant / location").setAutoWidth(true).setSortable(true);
 
         grid.addComponentColumn(asset -> {
             String notes = asset.getNotes() == null ? "" : asset.getNotes().trim();
@@ -113,7 +132,7 @@ public class TabletAssetsView extends VerticalLayout {
         grid.addColumn(new LocalDateTimeRenderer<>(
                 TabletAsset::getUpdatedAt,
                 () -> DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
-            .setHeader("Updated").setAutoWidth(true);
+            .setHeader("Updated").setAutoWidth(true).setSortable(true);
         
         grid.addComponentColumn(asset -> new Button("Edit", e -> openEditDialog(asset.getId(), false)))
                 .setHeader("Edit");
@@ -148,6 +167,7 @@ public class TabletAssetsView extends VerticalLayout {
 
                 dialog.open();
             });
+            grid.setMultiSort(true);
 
             archive.setVisible(hasRole("ADMIN"));
             return archive;
@@ -305,6 +325,16 @@ public class TabletAssetsView extends VerticalLayout {
             if (!canSave) return;
 
             if (binder.writeBeanIfValid(editable)) {
+                // Check for duplicate asset tag before saving
+                TabletAsset existing = assetRepo.findByAssetTag(editable.getAssetTag());
+                if (existing != null && !Objects.equals(existing.getId(), editable.getId())) {
+                    Notification.show(
+                        "Asset tag '" + editable.getAssetTag() + "' is already used by asset '" + safeString(existing.getAssetName()) + "'. Please use a unique tag.",
+                        5000,
+                        Notification.Position.MIDDLE
+                    );
+                    return;
+                }
                 Driver d = assignedDriver.getValue();
                 editable.setAssignedFleetId(d == null ? null : d.getFleetId());
 
@@ -358,5 +388,32 @@ public class TabletAssetsView extends VerticalLayout {
         return auth.getAuthorities().stream().anyMatch(a ->
                 a.getAuthority().equals(role) || a.getAuthority().equals("ROLE_" + role)
         );
+    }
+
+    private static int compareNatural(String left, String right) {
+        int i = 0, j = 0;
+        while (i < left.length() && j < right.length()) {
+            char c1 = left.charAt(i);
+            char c2 = right.charAt(j);
+
+            if (Character.isDigit(c1) && Character.isDigit(c2)) {
+                int s1 = i, s2 = j;
+                while (i < left.length() && Character.isDigit(left.charAt(i))) i++;
+                while (j < right.length() && Character.isDigit(right.charAt(j))) j++;
+
+                String n1 = left.substring(s1, i).replaceFirst("^0+(?!$)", "");
+                String n2 = right.substring(s2, j).replaceFirst("^0+(?!$)", "");
+
+                if (n1.length() != n2.length()) return Integer.compare(n1.length(), n2.length());
+                int cmpNum = n1.compareTo(n2);
+                if (cmpNum != 0) return cmpNum;
+            } else {
+                int cmp = Character.compare(Character.toLowerCase(c1), Character.toLowerCase(c2));
+                if (cmp != 0) return cmp;
+                i++;
+                j++;
+            }
+        }
+        return Integer.compare(left.length(), right.length());
     }
 }

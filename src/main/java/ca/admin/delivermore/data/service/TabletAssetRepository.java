@@ -22,4 +22,8 @@ public interface TabletAssetRepository extends JpaRepository<TabletAsset, Long> 
     List<TabletAsset> findAllOrderByAssetNameAsc();
 
     boolean existsByAssetTag(String assetTag);
+
+    long countByArchivedFalse();
+
+    TabletAsset findByAssetTag(String assetTag);
 }

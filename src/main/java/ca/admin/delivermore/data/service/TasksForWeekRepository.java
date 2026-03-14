@@ -16,7 +16,7 @@ import org.springframework.data.jpa.repository.Query;
  *
  * @author birch
  */
-public interface TasksForWeekRepository extends JpaRepository<TasksForWeek, UUID> {
+public interface TasksForWeekRepository extends JpaRepository<TasksForWeek, LocalDate> {
     @Override
     List<TasksForWeek> findAll();
 
