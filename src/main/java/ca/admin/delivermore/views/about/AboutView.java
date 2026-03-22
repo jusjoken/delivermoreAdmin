@@ -1,13 +1,12 @@
 package ca.admin.delivermore.views.about;
 
-import ca.admin.delivermore.collector.data.service.DriversRepository;
-import ca.admin.delivermore.collector.data.tookan.Driver;
-import ca.admin.delivermore.data.service.intuit.controller.QBOController;
-import ca.admin.delivermore.data.service.webpush.WebPushService;
-import ca.admin.delivermore.data.service.webpush.WebPushToggle;
-import ca.admin.delivermore.security.AuthenticatedUser;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -15,15 +14,19 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import nl.martijndwars.webpush.Subscription;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
+import ca.admin.delivermore.collector.data.service.DriversRepository;
+import ca.admin.delivermore.collector.data.tookan.Driver;
+import ca.admin.delivermore.collector.version.CollectorVersionInfo;
+import ca.admin.delivermore.data.service.intuit.controller.QBOController;
+import ca.admin.delivermore.data.service.webpush.WebPushService;
+import ca.admin.delivermore.data.service.webpush.WebPushToggle;
+import ca.admin.delivermore.security.AuthenticatedUser;
+import ca.admin.delivermore.version.AdminVersionInfo;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
-import java.util.Optional;
+import nl.martijndwars.webpush.Subscription;
 
 @PageTitle("About")
 @Route(value = "about", layout = MainLayout.class)
@@ -43,15 +46,11 @@ public class AboutView extends VerticalLayout {
     @Autowired
     PasswordEncoder passwordEncoder;
 
-    @Autowired
-    Environment env;
-
     Optional<Driver> signedInDriver;
     private AuthenticatedUser authenticatedUser;
 
 
-    public AboutView(@Autowired Environment env, WebPushService webPushService,@Autowired AuthenticatedUser authenticatedUser) {
-        this.env = env;
+    public AboutView(WebPushService webPushService, AuthenticatedUser authenticatedUser) {
         this.webPushService = webPushService;
         this.authenticatedUser = authenticatedUser;
 
@@ -61,9 +60,10 @@ public class AboutView extends VerticalLayout {
 
         setSpacing(false);
 
-        String header = "DeliverMore Admin Application";
-        String version = env.getProperty("DM_APPLICATION_RELEASE_VERSION");
-        header+= " v" + version;
+        String header = "DeliverMore Admin Application"
+            + " (Admin v" + AdminVersionInfo.getVersion()
+            + ", Collector v" + CollectorVersionInfo.getVersion()
+            + ")";
         add(UIUtilities.createStandardHeader(header,"DeliverMore.ca is a locally owned and operated online ordering and delivery service"));
 
         /*

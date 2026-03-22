@@ -14,6 +14,8 @@
         <vaadin.version>25.0.7</vaadin.version>
         <selenium.version>4.23.0</selenium.version>
         <jackson.version>2.21.1</jackson.version>
+        <version.major>1</version.major>
+        <version.minor>6</version.minor>
     </properties>
 
     <parent>
@@ -340,8 +342,31 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/resources/versioning</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <defaultGoal>spring-boot:run</defaultGoal>
         <plugins>
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>8.0.2</version>
+                <configuration>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                    <generateGitPropertiesFilename>${project.build.outputDirectory}/admin-git.properties</generateGitPropertiesFilename>
+                    <includeOnlyProperties>
+                        <includeOnlyProperty>^git.total.commit.count$</includeOnlyProperty>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

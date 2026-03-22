@@ -1,8 +1,5 @@
 package ca.admin.delivermore.views.home;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
-
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.router.PageTitle;
@@ -10,6 +7,8 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouteAlias;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
 
+import ca.admin.delivermore.collector.version.CollectorVersionInfo;
+import ca.admin.delivermore.version.AdminVersionInfo;
 import ca.admin.delivermore.views.MainLayout;
 
 @PageTitle("Home")
@@ -18,9 +17,12 @@ import ca.admin.delivermore.views.MainLayout;
 @AnonymousAllowed
 public class HomeView extends HorizontalLayout {
 
-    public HomeView(@Autowired Environment env) {
-        String version = env.getProperty("DM_APPLICATION_RELEASE_VERSION");
-        String header = "Welcome to DeliverMore Admin application (v" + version + ")";
+    public HomeView() {
+        String header = "Welcome to DeliverMore Admin application (Admin v"
+                + AdminVersionInfo.getVersion()
+                + ", Collector v"
+                + CollectorVersionInfo.getVersion()
+                + ")";
 
         Text welcomeMessage = new Text(header);
 
