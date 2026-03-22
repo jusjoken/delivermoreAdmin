@@ -347,7 +347,7 @@ public class ScheduleView extends Main implements SchedulerRefreshNeededListener
         scheduler = FullCalendarBuilder.create()
                 .withCustomType(FullCalendarWithTooltip.class) // create a new instance with a custom type
                 .withAutoBrowserTimezone()
-                .withInitialOptions(calendarOptions.getJsonObject())
+            .withInitialOptions(calendarOptions.getObjectNode())
                 .withEntryLimit(3)
                 .withScheduler("GPL-My-Project-Is-Open-Source")
                 .build();
@@ -360,7 +360,9 @@ public class ScheduleView extends Main implements SchedulerRefreshNeededListener
         scheduler.setSlotMinTime(Scheduler.minTime);
         scheduler.setSlotMaxTime(Scheduler.maxTime);
         scheduler.setBusinessHours(
-                new BusinessHours(Scheduler.minTime, Scheduler.maxTime, BusinessHours.ALL_DAYS));
+            BusinessHours.of(BusinessHours.ALL_DAYS)
+                .start(Scheduler.minTime)
+                .end(Scheduler.maxTime));
         scheduler.allowDatesRenderEventOnOptionChange(false);
 
         scheduler.addDayNumberClickedListener(e -> {

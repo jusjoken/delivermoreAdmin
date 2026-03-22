@@ -1,12 +1,13 @@
 package ca.admin.delivermore.components.custom;
 
+import org.vaadin.stefan.fullcalendar.FullCalendarScheduler;
+
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.dependency.CssImport;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dependency.NpmPackage;
-import elemental.json.JsonObject;
-import org.vaadin.stefan.fullcalendar.FullCalendarScheduler;
-import org.vaadin.stefan.fullcalendar.SchedulerView;
+
+import tools.jackson.databind.node.ObjectNode;
 
 @NpmPackage(value = "tippy.js", version = "6.2.3")
 @Tag("full-calendar-with-tooltip")
@@ -23,7 +24,7 @@ public class FullCalendarWithTooltip extends FullCalendarScheduler {
         super(entryLimit);
     }
 
-    public FullCalendarWithTooltip(JsonObject initialOptions) {
+    public FullCalendarWithTooltip(ObjectNode initialOptions) {
         super(initialOptions);
     }
 

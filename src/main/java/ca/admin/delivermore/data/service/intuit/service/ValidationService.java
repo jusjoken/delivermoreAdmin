@@ -1,20 +1,5 @@
 package ca.admin.delivermore.data.service.intuit.service;
 
-import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
-import ca.admin.delivermore.data.service.intuit.helper.HttpHelper;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.tomcat.util.codec.binary.Base64;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -23,7 +8,23 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HashMap;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
+import ca.admin.delivermore.data.service.intuit.helper.HttpHelper;
 
 @Service
 public class ValidationService {
@@ -168,10 +169,7 @@ public class ValidationService {
     }
 
     private byte[] base64UrlDecodeToBytes(String input) {
-        Base64 decoder = new Base64(-1, null, true);
-        byte[] decodedBytes = decoder.decode(input);
-
-        return decodedBytes;
+        return Base64.getUrlDecoder().decode(input);
     }
 
     private HashMap<String, JSONObject> getKeyMapFromJWKSUri() {

@@ -1,21 +1,22 @@
 package ca.admin.delivermore.data.service.intuit.helper;
 
-import ca.admin.delivermore.collector.data.Config;
-import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.message.BasicNameValuePair;
-import org.apache.tomcat.util.codec.binary.Base64;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import jakarta.servlet.http.HttpSession;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
+import ca.admin.delivermore.collector.data.Config;
+import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
 
 @Service
 public class HttpHelper {
@@ -24,7 +25,8 @@ public class HttpHelper {
     public OAuth2Configuration oAuth2Configuration;
 
     public HttpPost addHeader(HttpPost post) {
-        String base64ClientIdSec = Base64.encodeBase64String((oAuth2Configuration.getAppClientId() + ":" + oAuth2Configuration.getAppClientSecret()).getBytes());
+        String clientCredentials = oAuth2Configuration.getAppClientId() + ":" + oAuth2Configuration.getAppClientSecret();
+        String base64ClientIdSec = Base64.getEncoder().encodeToString(clientCredentials.getBytes(StandardCharsets.UTF_8));
         post.setHeader("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
         post.setHeader("Authorization", "Basic " + base64ClientIdSec);
         post.setHeader("Accept", "application/json");
@@ -34,9 +36,9 @@ public class HttpHelper {
     public List<NameValuePair> getUrlParameters(String action) {
         List<NameValuePair> urlParameters = new ArrayList<>();
         String refreshToken = Config.getInstance().getQBORefreshToken();
-        if (action == "revoke") {
+        if ("revoke".equals(action)) {
             urlParameters.add(new BasicNameValuePair("token", refreshToken));
-        } else if (action == "refresh") {
+        } else if ("refresh".equals(action)) {
             urlParameters.add(new BasicNameValuePair("refresh_token", refreshToken));
             urlParameters.add(new BasicNameValuePair("grant_type", "refresh_token"));
         } else {

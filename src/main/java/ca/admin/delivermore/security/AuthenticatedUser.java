@@ -1,16 +1,9 @@
 package ca.admin.delivermore.security;
 
-import ca.admin.delivermore.collector.data.entity.PasswordResetToken;
-import ca.admin.delivermore.collector.data.service.DriversRepository;
-import ca.admin.delivermore.collector.data.service.EmailService;
-import ca.admin.delivermore.collector.data.service.PasswordResetTokenRepository;
-import ca.admin.delivermore.collector.data.tookan.Driver;
-import com.vaadin.flow.component.UI;
-import com.vaadin.flow.server.VaadinServletRequest;
-
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Calendar;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,14 +18,21 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.stereotype.Component;
 
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.VaadinServletRequest;
+
+import ca.admin.delivermore.collector.data.entity.PasswordResetToken;
+import ca.admin.delivermore.collector.data.service.DriversRepository;
+import ca.admin.delivermore.collector.data.service.EmailService;
+import ca.admin.delivermore.collector.data.service.PasswordResetTokenRepository;
+import ca.admin.delivermore.collector.data.tookan.Driver;
+
 @Component
 public class AuthenticatedUser {
 
-    private Logger log = LoggerFactory.getLogger(AuthenticatedUser.class);
+    private final Logger log = LoggerFactory.getLogger(AuthenticatedUser.class);
     private final DriversRepository driversRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
-
-    private String currentUrl = "";
 
     @Autowired
     private EmailService emailService;
@@ -52,17 +52,36 @@ public class AuthenticatedUser {
     }
 
     public Optional<Driver> get() {
-        return getAuthentication().map(authentication -> driversRepository.findDriverByEmailAndLoginAllowed(authentication.getName(),Boolean.TRUE));
+        return getAuthentication().flatMap(authentication -> {
+            Driver byAllowedLogin = driversRepository.findDriverByEmailAndLoginAllowed(authentication.getName(), Boolean.TRUE);
+            if (byAllowedLogin != null) {
+                return Optional.of(byAllowedLogin);
+            }
+
+            // Keep the current session resolvable even if loginAllowed was toggled after login.
+            Optional<Driver> fallback = driversRepository.findAll().stream()
+                    .filter(driver -> Objects.equals(driver.getEmail(), authentication.getName()))
+                    .findFirst();
+
+            if (fallback.isPresent()) {
+                log.debug("AuthenticatedUser.get: resolved user '{}' via fallback email lookup despite loginAllowed mismatch", authentication.getName());
+            } else {
+                log.warn("AuthenticatedUser.get: no driver found for authenticated principal '{}'", authentication.getName());
+            }
+
+            return fallback;
+        });
     }
 
     public void logout() {
-        UI.getCurrent().getPage().setLocation(SecurityConfiguration.LOGOUT_URL);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         SecurityContextLogoutHandler logoutHandler = new SecurityContextLogoutHandler();
-        logoutHandler.logout(VaadinServletRequest.getCurrent().getHttpServletRequest(), null, null);
+        logoutHandler.logout(VaadinServletRequest.getCurrent().getHttpServletRequest(), null, authentication);
+        UI.getCurrent().getPage().setLocation(SecurityConfiguration.LOGOUT_SUCCESS_URL);
     }
 
     public Boolean resetPassword(String email){
-        Driver user = null;
+        Driver user;
         try {
             user = driversRepository.findDriverByEmailAndLoginAllowed(email,Boolean.TRUE);
         } catch (Exception e) {

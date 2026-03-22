@@ -1,13 +1,13 @@
 package ca.admin.delivermore.views.restaurants;
 
-import ca.admin.delivermore.collector.data.entity.Restaurant;
-import ca.admin.delivermore.collector.data.service.RestaurantRepository;
-import ca.admin.delivermore.collector.data.tookan.Team;
-import ca.admin.delivermore.components.custom.ListEditor;
-import ca.admin.delivermore.components.custom.LocationChoice;
-import ca.admin.delivermore.components.custom.LocationChoiceChangedListener;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeanUtils;
+
 import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.button.Button;
@@ -16,7 +16,6 @@ import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datepicker.DatePickerVariant;
-import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -39,19 +38,20 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.BeanUtils;
 
+import ca.admin.delivermore.collector.data.entity.Restaurant;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
+import ca.admin.delivermore.collector.data.tookan.Team;
+import ca.admin.delivermore.components.custom.ListEditor;
+import ca.admin.delivermore.components.custom.LocationChoice;
+import ca.admin.delivermore.components.custom.LocationChoiceChangedListener;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.temporal.TemporalAdjusters;
 
 @PageTitle("Restaurants")
 @Route(value = "restaurants", layout = MainLayout.class)
 @RolesAllowed("ADMIN")
-@JsModule("@vaadin/vaadin-lumo-styles/presets/compact.js")
 public class RestView extends VerticalLayout implements LocationChoiceChangedListener {
 
     enum DialogMode{

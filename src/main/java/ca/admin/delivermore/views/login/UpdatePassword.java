@@ -1,9 +1,20 @@
 package ca.admin.delivermore.views.login;
 
-import ca.admin.delivermore.security.AuthenticatedUser;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
-import ca.admin.delivermore.views.home.HomeView;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import org.passay.CharacterRule;
+import org.passay.EnglishCharacterData;
+import org.passay.LengthRule;
+import org.passay.PasswordData;
+import org.passay.PasswordValidator;
+import org.passay.Rule;
+import org.passay.RuleResult;
+import org.passay.WhitespaceRule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
@@ -15,18 +26,21 @@ import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.data.value.ValueChangeMode;
-import com.vaadin.flow.router.*;
+import com.vaadin.flow.router.BeforeEvent;
+import com.vaadin.flow.router.HasUrlParameter;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.OptionalParameter;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.QueryParameters;
+import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
-import org.passay.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import ca.admin.delivermore.security.AuthenticatedUser;
+import ca.admin.delivermore.views.UIUtilities;
+import ca.admin.delivermore.views.home.HomeView;
 
 @PageTitle("Update Password")
-@Route(value = "updatepassword", layout = MainLayout.class)
+@Route(value = "updatepassword")
 @AnonymousAllowed
 public class UpdatePassword extends VerticalLayout implements HasUrlParameter<String>{
     private static final Logger log = LoggerFactory.getLogger(UpdatePassword.class);

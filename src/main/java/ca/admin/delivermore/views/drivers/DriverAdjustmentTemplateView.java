@@ -1,21 +1,16 @@
 package ca.admin.delivermore.views.drivers;
 
-import ca.admin.delivermore.data.entity.DriverAdjustmentTemplate;
-import ca.admin.delivermore.data.entity.GiftCardEntity;
-import ca.admin.delivermore.data.entity.GiftCardTranactionEntity;
-import ca.admin.delivermore.data.scheduler.SchedulerEventDialog;
-import ca.admin.delivermore.data.service.DriverAdjustmentTemplateRepository;
-import ca.admin.delivermore.gridexporter.ButtonsAlignment;
-import ca.admin.delivermore.gridexporter.GridExporter;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
-import ca.admin.delivermore.views.utility.GiftCardView;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
-import com.vaadin.flow.component.datepicker.DatePickerVariant;
-import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -26,24 +21,21 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
-import com.vaadin.flow.data.renderer.ComponentRenderer;
-import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import jakarta.annotation.security.RolesAllowed;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.List;
+import ca.admin.delivermore.data.entity.DriverAdjustmentTemplate;
+import ca.admin.delivermore.data.scheduler.SchedulerEventDialog;
+import ca.admin.delivermore.data.service.DriverAdjustmentTemplateRepository;
+import ca.admin.delivermore.gridexporter.ButtonsAlignment;
+import ca.admin.delivermore.gridexporter.GridExporter;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
+import jakarta.annotation.security.RolesAllowed;
 
 @PageTitle("Driver Adjustment Templates")
 @Route(value = "driveradjustmenttemplates", layout = MainLayout.class)
 @RolesAllowed("ADMIN")
-@JsModule("@vaadin/vaadin-lumo-styles/presets/compact.js")
 public class DriverAdjustmentTemplateView extends VerticalLayout {
 
     enum DialogMode{

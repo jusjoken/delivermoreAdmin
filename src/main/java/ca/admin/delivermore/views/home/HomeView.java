@@ -1,18 +1,16 @@
 package ca.admin.delivermore.views.home;
 
-import ca.admin.delivermore.views.MainLayout;
-import com.vaadin.flow.component.Key;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+
 import com.vaadin.flow.component.Text;
-import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
-import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouteAlias;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
+
+import ca.admin.delivermore.views.MainLayout;
 
 @PageTitle("Home")
 @Route(value = "home", layout = MainLayout.class)

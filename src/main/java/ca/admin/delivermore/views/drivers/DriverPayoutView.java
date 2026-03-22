@@ -301,7 +301,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         detailsLayout.add(summaryDetails);
         periodBinder.readBean(driverPayoutPeriod);
         VerticalLayout summaryDetailsContent = new VerticalLayout();
-        summaryDetails.addContent(summaryDetailsContent);
+        summaryDetails.add(summaryDetailsContent);
 
         //Add the Documents review Details pane
         Details periodDocuments = new Details("Documents");
@@ -383,7 +383,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
 
         VerticalLayout periodDocumentsContent = UIUtilities.getVerticalLayout();
         periodDocumentsContent.add(periodDocumentsToolbar);
-        periodDocuments.addContent(periodDocumentsContent);
+        periodDocuments.add(periodDocumentsContent);
         //add checkbox group of all documents
         periodDocumentsContent.add(periodDocumentsGrid);
         periodDocumentsGrid.setWidthFull();
@@ -467,7 +467,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         summaryAdjustmentGrid.getColumns().forEach(col -> col.setAutoWidth(true));
         VerticalLayout periodAdjustmentsContent = UIUtilities.getVerticalLayout();
         periodAdjustmentsContent.add(periodAdustmentsToolbar, summaryAdjustmentGrid);
-        periodAdjustments.addContent(periodAdjustmentsContent);
+        periodAdjustments.add(periodAdjustmentsContent);
 
         //Add the driver card tip list in a Grid to the summary content within a Details
         Details periodCardTips = new Details("Tips via Card (Total:" + driverPayoutPeriod.getCardTip() + ")");
@@ -488,7 +488,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                 .setHeader("Amount")
                 .setTextAlign(ColumnTextAlign.END);
         summaryCardTipGrid.getColumns().forEach(col -> col.setAutoWidth(true));
-        periodCardTips.addContent(summaryCardTipGrid);
+        periodCardTips.add(summaryCardTipGrid);
 
         //Add the driver tip issues list in a Grid to the summary content within a Details
         Details periodTipIssues = new Details("Potential tip issues");
@@ -519,7 +519,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         summaryTipIssuesGrid.addColumn(DriverPayoutEntity::getNotes).setHeader("Notes");
         summaryTipIssuesGrid.addColumn(DriverPayoutEntity::getJobId).setHeader("Task Id");
         summaryTipIssuesGrid.getColumns().forEach(col -> col.setAutoWidth(true));
-        periodTipIssues.addContent(summaryTipIssuesGrid);
+        periodTipIssues.add(summaryTipIssuesGrid);
 
         //Drivers - week
         for (DriverPayoutWeek driverPayoutWeek: driverPayoutPeriod.getDriverPayoutWeekList()) {
@@ -627,7 +627,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                 driverDayGrid.addColumn(DriverPayoutEntity::getJobId).setHeader("Task Id");
                 driverDayGrid.getColumns().forEach(col -> col.setAutoWidth(true));
 
-                driverDayDetails.setContent(driverDayGrid);
+                driverDayDetails.add(driverDayGrid);
                 //driverDayGrid.asSingleSelect().addValueChangeListener(e -> editDriverPayoutEntity(e.getValue()));
 
             }
@@ -656,7 +656,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
             weekGridMap.put(driverPayoutWeek.getFleetId(),driverAdjustmentGrid);
             VerticalLayout driverAdjustmentsContent = UIUtilities.getVerticalLayout();
             driverAdjustmentsContent.add(driverAdustmentsToolbar, driverAdjustmentGrid);
-            driverWeekAdjustments.addContent(driverAdjustmentsContent);
+            driverWeekAdjustments.add(driverAdjustmentsContent);
             driverAdjustmentGrid.addComponentColumn(item -> {
                 Icon editIcon = new Icon("lumo", "edit");
                 //Button editButton = new Button("Edit");
@@ -685,7 +685,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                 driverAdjustmentGrid.setItems(driverPayoutWeek.getDriverAdjustmentList());
             }
 
-            driverDetails.setContent(driverDetailsContent);
+            driverDetails.add(driverDetailsContent);
 
         }
 

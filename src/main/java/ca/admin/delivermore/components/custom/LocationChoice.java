@@ -1,8 +1,11 @@
 package ca.admin.delivermore.components.custom;
 
-import ca.admin.delivermore.collector.data.service.TeamsRepository;
-import ca.admin.delivermore.collector.data.tookan.Team;
-import ca.admin.delivermore.data.service.Registry;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.flow.component.ClickEvent;
 import com.vaadin.flow.component.ComponentEventListener;
 import com.vaadin.flow.component.contextmenu.MenuItem;
@@ -10,11 +13,10 @@ import com.vaadin.flow.component.contextmenu.SubMenu;
 import com.vaadin.flow.component.customfield.CustomField;
 import com.vaadin.flow.component.html.Hr;
 import com.vaadin.flow.component.menubar.MenuBar;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
+import ca.admin.delivermore.collector.data.service.TeamsRepository;
+import ca.admin.delivermore.collector.data.tookan.Team;
+import ca.admin.delivermore.data.service.Registry;
 
 public class LocationChoice extends CustomField<String> {
 
@@ -62,7 +64,7 @@ public class LocationChoice extends CustomField<String> {
             allLocations.setCheckable(true);
             allLocations.setId(allLocationOption.getTeamId().toString());
             allLocations.setChecked(true);
-            subMenu.add(new Hr());
+            subMenu.addComponent(new Hr());
         }
 
         log.info("LocationChoice: locations size:" + locations.size() + " locations:" + locations);

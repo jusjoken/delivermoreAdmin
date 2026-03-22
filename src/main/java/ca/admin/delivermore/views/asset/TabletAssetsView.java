@@ -1,42 +1,5 @@
 package ca.admin.delivermore.views.asset;
 
-import ca.admin.delivermore.collector.data.entity.Restaurant;
-import ca.admin.delivermore.collector.data.service.DriversRepository;
-import ca.admin.delivermore.collector.data.service.RestaurantRepository;
-import ca.admin.delivermore.collector.data.tookan.Driver;
-import ca.admin.delivermore.data.entity.TabletAsset;
-import ca.admin.delivermore.data.service.TabletAssetRepository;
-import ca.admin.delivermore.data.service.TabletAssetService;
-import ca.admin.delivermore.views.MainLayout;
-
-import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.combobox.ComboBox;
-import com.vaadin.flow.component.dialog.Dialog;
-import com.vaadin.flow.component.formlayout.FormLayout;
-import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.grid.GridSortOrder;
-import com.vaadin.flow.component.html.Span;
-import com.vaadin.flow.component.notification.Notification;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
-import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.binder.Binder;
-import com.vaadin.flow.router.PageTitle;
-import com.vaadin.flow.router.Route;
-import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
-import com.vaadin.flow.component.button.ButtonVariant;
-
-// add import
-import com.vaadin.flow.component.textfield.TextArea;
-import com.vaadin.flow.data.renderer.ComponentRenderer;
-import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
-import com.vaadin.flow.data.provider.SortDirection;
-
-import jakarta.annotation.security.RolesAllowed;
-
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -45,6 +8,40 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.binder.Binder;
+import com.vaadin.flow.data.provider.SortDirection;
+import com.vaadin.flow.data.renderer.ComponentRenderer;
+import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.Route;
+
+import ca.admin.delivermore.collector.data.entity.Restaurant;
+import ca.admin.delivermore.collector.data.service.DriversRepository;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
+import ca.admin.delivermore.collector.data.tookan.Driver;
+import ca.admin.delivermore.data.entity.TabletAsset;
+import ca.admin.delivermore.data.service.TabletAssetRepository;
+import ca.admin.delivermore.data.service.TabletAssetService;
+import ca.admin.delivermore.views.MainLayout;
+import jakarta.annotation.security.RolesAllowed;
 
 @PageTitle("Asset Manager")
 @Route(value = "assets", layout = MainLayout.class)
@@ -98,6 +95,7 @@ public class TabletAssetsView extends VerticalLayout {
 
     private void configureGrid() {
         grid.removeAllColumns();
+        grid.setMultiSort(true);
 
         Grid.Column<TabletAsset> nameCol = grid.addColumn(TabletAsset::getAssetName).setHeader("Name").setAutoWidth(true).setSortable(true);
         Grid.Column<TabletAsset> tagCol = grid.addColumn(TabletAsset::getAssetTag)
@@ -167,7 +165,6 @@ public class TabletAssetsView extends VerticalLayout {
 
                 dialog.open();
             });
-            grid.setMultiSort(true);
 
             archive.setVisible(hasRole("ADMIN"));
             return archive;

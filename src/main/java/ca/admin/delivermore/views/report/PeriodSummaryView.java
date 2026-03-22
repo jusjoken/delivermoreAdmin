@@ -289,7 +289,7 @@ public class PeriodSummaryView extends Main implements TaskListRefreshNeededList
             createSalesReceiptButton.setEnabled(true);
         }
         Grid<RestPayoutPeriod> grid = new Grid<>();
-        restSaleSummaryDetails.setContent(grid);
+        restSaleSummaryDetails.add(grid);
         grid.setItems(restPayoutSummary.getRestPayoutPeriodList());
         grid.setWidthFull();
         grid.setAllRowsVisible(true);
@@ -407,7 +407,7 @@ public class PeriodSummaryView extends Main implements TaskListRefreshNeededList
         summaryHeader.add(new NativeLabel("Driver Cost:"),driverCostField,driverPayField,driverAdjField,driverCashField,driverTipsfield,driverPayoutField);
         driverPayoutSummaryDetails.setSummary(summaryHeader);
         Grid<DriverPayoutWeek> grid = new Grid<>();
-        driverPayoutSummaryDetails.setContent(grid);
+        driverPayoutSummaryDetails.add(grid);
         grid.setItems(driverPayoutPeriod.getDriverPayoutWeekList());
         grid.setWidthFull();
         grid.setAllRowsVisible(true);

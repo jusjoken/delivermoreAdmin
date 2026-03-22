@@ -1,9 +1,8 @@
 package ca.admin.delivermore.views.login;
 
-import ca.admin.delivermore.security.AuthenticatedUser;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
-import ca.admin.delivermore.views.home.HomeView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
@@ -12,11 +11,13 @@ import com.vaadin.flow.component.textfield.EmailField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import ca.admin.delivermore.security.AuthenticatedUser;
+import ca.admin.delivermore.views.UIUtilities;
+import ca.admin.delivermore.views.home.HomeView;
 
 @PageTitle("Reset Password")
-@Route(value = "resetpassword", layout = MainLayout.class)
+@Route(value = "resetpassword")
 @AnonymousAllowed
 public class PasswordReset extends VerticalLayout {
     private Logger log = LoggerFactory.getLogger(PasswordReset.class);

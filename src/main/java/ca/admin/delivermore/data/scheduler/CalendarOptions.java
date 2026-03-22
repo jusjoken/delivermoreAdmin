@@ -1,7 +1,10 @@
 
 package ca.admin.delivermore.data.scheduler;
 
-import jakarta.annotation.Generated;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -9,12 +12,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import elemental.json.Json;
 import elemental.json.JsonObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.List;
+import jakarta.annotation.Generated;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
@@ -164,6 +165,17 @@ public class CalendarOptions {
             throw new RuntimeException(e);
         }
         return null;
+    }
+
+    @JsonIgnore
+    public tools.jackson.databind.node.ObjectNode getObjectNode() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            String jsonString = objectMapper.writeValueAsString(this);
+            return (tools.jackson.databind.node.ObjectNode) new tools.jackson.databind.ObjectMapper().readTree(jsonString);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override

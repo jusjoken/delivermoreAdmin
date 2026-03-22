@@ -1,12 +1,17 @@
 package ca.admin.delivermore.views.tasks;
 
-import ca.admin.delivermore.collector.data.service.RestClientService;
-import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
-import ca.admin.delivermore.data.report.TasksForMonth;
-import ca.admin.delivermore.data.report.TasksForWeek;
-import ca.admin.delivermore.data.service.TasksForWeekRepository;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
@@ -19,61 +24,56 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import com.vaadin.flow.shared.Registration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 
+import ca.admin.delivermore.collector.data.service.RestClientService;
+import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
+import ca.admin.delivermore.data.report.TasksForMonth;
+import ca.admin.delivermore.data.report.TasksForWeek;
+import ca.admin.delivermore.data.service.TasksForWeekRepository;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
 
 @PageTitle("Tasks Report (by Day/Week/Month)")
 @Route(value = "tasksbydayandweek", layout = MainLayout.class)
 @RolesAllowed({"ADMIN","MANAGER"})
 public class TasksByDayAndWeekView extends VerticalLayout {
-    private TaskDetailRepository taskDetailRepository;
-    private RestClientService restClientService;
-    private Grid<TasksForWeek> grid = new Grid<>();
-    private TasksForWeekRepository tasksForWeekRepository;
+    private final TaskDetailRepository taskDetailRepository;
+    private final RestClientService restClientService;
+    private final Grid<TasksForWeek> grid = new Grid<>();
+    private final TasksForWeekRepository tasksForWeekRepository;
 
     private HeaderRow hRowRecords;
     private HeaderRow hRowAverages;
     private HeaderRow hRowMonthRecord;
     private HeaderRow hRowMonthAverage;
-    private Grid.Column colName;
-    private Grid.Column colSunday;
-    private Grid.Column colMonday;
-    private Grid.Column colTuesday;
-    private Grid.Column colWednesday;
-    private Grid.Column colThursday;
-    private Grid.Column colFriday;
-    private Grid.Column colSaturday;
-    private Grid.Column colWeek;
+    private Grid.Column<TasksForWeek> colName;
+    private Grid.Column<TasksForWeek> colSunday;
+    private Grid.Column<TasksForWeek> colMonday;
+    private Grid.Column<TasksForWeek> colTuesday;
+    private Grid.Column<TasksForWeek> colWednesday;
+    private Grid.Column<TasksForWeek> colThursday;
+    private Grid.Column<TasksForWeek> colFriday;
+    private Grid.Column<TasksForWeek> colSaturday;
+    private Grid.Column<TasksForWeek> colWeek;
 
-    private Grid.Column colMonthName;
-    private Grid.Column colMonthCount;
+    private Grid.Column<TasksForMonth> colMonthName;
+    private Grid.Column<TasksForMonth> colMonthCount;
 
 
-    private Grid<TasksForMonth> gridMonths = new Grid<>();
-    private NativeLabel countLabel = new NativeLabel();
-    private List<TasksForWeek> tasksForWeeks = new ArrayList<>();
-    private Logger log = LoggerFactory.getLogger(TasksByDayAndWeekView.class);
-    private TasksForWeek recordTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.RECORD);
-    private TasksForWeek sumTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.SUM);
-    private TasksForWeek averageTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.AVERAGE);
+    private final Grid<TasksForMonth> gridMonths = new Grid<>();
+    private final NativeLabel countLabel = new NativeLabel();
+    private final List<TasksForWeek> tasksForWeeks = new ArrayList<>();
+    private final Logger log = LoggerFactory.getLogger(TasksByDayAndWeekView.class);
+    private final TasksForWeek recordTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.RECORD);
+    private final TasksForWeek sumTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.SUM);
+    private final TasksForWeek averageTasksForWeek = new TasksForWeek(TasksForWeek.TasksForWeekType.AVERAGE);
 
-    private List<TasksForMonth> tasksForMonths = new ArrayList<>();
-    private TasksForMonth recordTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.RECORD);
-    private TasksForMonth sumTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.SUM);
-    private TasksForMonth averageTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.AVERAGE);
+    private final List<TasksForMonth> tasksForMonths = new ArrayList<>();
+    private final TasksForMonth recordTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.RECORD);
+    private final TasksForMonth sumTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.SUM);
+    private final TasksForMonth averageTasksForMonth = new TasksForMonth(TasksForMonth.TasksForMonthType.AVERAGE);
 
-    @Autowired
     public TasksByDayAndWeekView(TaskDetailRepository taskDetailRepository, RestClientService restClientService, TasksForWeekRepository tasksForWeekRepository) {
         this.taskDetailRepository = taskDetailRepository;
         this.restClientService = restClientService;
@@ -100,35 +100,35 @@ public class TasksByDayAndWeekView extends VerticalLayout {
                 //.getElement().getStyle().set("background-color", "yellow");
         colSunday = grid.addColumn(TasksForWeek::getDowCountSunday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountSunday() == recordTasksForWeek.getDowCountSunday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountSunday(), recordTasksForWeek.getDowCountSunday()) ? "record" : null)
                 .setHeader("Sun");
         colMonday = grid.addColumn(TasksForWeek::getDowCountMonday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountMonday() == recordTasksForWeek.getDowCountMonday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountMonday(), recordTasksForWeek.getDowCountMonday()) ? "record" : null)
                 .setHeader("Mon");
         colTuesday = grid.addColumn(TasksForWeek::getDowCountTuesday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountTuesday() == recordTasksForWeek.getDowCountTuesday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountTuesday(), recordTasksForWeek.getDowCountTuesday()) ? "record" : null)
                 .setHeader("Tue");
         colWednesday = grid.addColumn(TasksForWeek::getDowCountWednesday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountWednesday() == recordTasksForWeek.getDowCountWednesday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountWednesday(), recordTasksForWeek.getDowCountWednesday()) ? "record" : null)
                 .setHeader("Wed");
         colThursday = grid.addColumn(TasksForWeek::getDowCountThursday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountThursday() == recordTasksForWeek.getDowCountThursday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountThursday(), recordTasksForWeek.getDowCountThursday()) ? "record" : null)
                 .setHeader("Thu");
         colFriday = grid.addColumn(TasksForWeek::getDowCountFriday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountFriday() == recordTasksForWeek.getDowCountFriday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountFriday(), recordTasksForWeek.getDowCountFriday()) ? "record" : null)
                 .setHeader("Fri");
         colSaturday = grid.addColumn(TasksForWeek::getDowCountSaturday)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getDowCountSaturday() == recordTasksForWeek.getDowCountSaturday() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getDowCountSaturday(), recordTasksForWeek.getDowCountSaturday()) ? "record" : null)
                 .setHeader("Sat");
         colWeek = grid.addColumn(TasksForWeek::getWeekCount)
                 .setTextAlign(ColumnTextAlign.END)
-                .setClassNameGenerator(item -> item.getWeekCount() == recordTasksForWeek.getWeekCount() ? "record" : null)
+            .setPartNameGenerator(item -> Objects.equals(item.getWeekCount(), recordTasksForWeek.getWeekCount()) ? "record" : null)
                 .setHeader("Total");
         //grid.setColumnReorderingAllowed(false);
         //grid.getColumns().forEach(col -> col.setAutoWidth(true));
@@ -154,11 +154,6 @@ public class TasksByDayAndWeekView extends VerticalLayout {
 
     private HorizontalLayout getToolbar() {
 
-        //get lastWeek as the default for the range picker
-        LocalDate nowDate = LocalDate.now();
-
-        LocalDate defaultDate = LocalDate.parse("2022-08-14");
-
         // Fetch all entities and show
         final Button fetchTasks = new Button("Refresh",
                 e -> updateList()
@@ -181,14 +176,9 @@ public class TasksByDayAndWeekView extends VerticalLayout {
         tasksForWeeks.clear();
         
         LocalDate defaultStartDate = LocalDate.parse("2022-08-14");
-        LocalDate maxDate = defaultStartDate;
         
         TasksForWeek maxTaskWeek = tasksForWeekRepository.findFirstByOrderByStartDateDesc();
-        if(maxTaskWeek==null) {
-            maxDate = defaultStartDate; 
-        }else{
-            maxDate = maxTaskWeek.getStartDate();
-        }
+        LocalDate maxDate = maxTaskWeek == null ? defaultStartDate : maxTaskWeek.getStartDate();
         
         LocalDate startDate = maxDate;
         LocalDate endDate = LocalDate.now();
@@ -223,7 +213,7 @@ public class TasksByDayAndWeekView extends VerticalLayout {
                 tasksForWeek = new TasksForWeek();
                 firstDate = date;
             }
-            Long dayCount = 0L;
+            Long dayCount;
             if (date.equals(endDate)) {
                 //Update today directly from tookan API
                 dayCount = Long.valueOf(restClientService.getTaskCount(LocalDate.now(), LocalDate.now()));

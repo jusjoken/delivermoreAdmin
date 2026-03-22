@@ -19,9 +19,9 @@ The main purpose of the admin app is to have a combined picture of all the data 
 **Base package:** `ca.admin.delivermore`
 
 ### Tech Stack
-- Java 17
-- Spring Boot 3.3.2
-- Vaadin 24 (Flow) for the UI — components live in `views/`
+- Java 21
+- Spring Boot 4.0
+- Vaadin 25 (Flow) for the UI — components live in `views/`
 - Spring Security for authentication/authorization
 - Spring Data JPA for persistence
 - Spring WebFlux (reactive HTTP client for external API calls)
@@ -52,8 +52,8 @@ The main purpose of the admin app is to have a combined picture of all the data 
 **Root:** `dm_collector/collector/`
 
 ### Tech Stack
-- Java 17
-- Spring Boot 3.3.2
+- Java 21
+- Spring Boot 4.0
 - Spring Batch for scheduled data processing jobs
 - Spring Data JPA for persistence
 - Spring WebFlux (reactive HTTP client for external API calls)
@@ -77,7 +77,7 @@ The main purpose of the admin app is to have a combined picture of all the data 
 ### General
 - Vaadin is the primary framework for the admin app, so follow Vaadin best practices for UI development (e.g. using `@Route` for views, keeping business logic out of views, etc.)
 - where possible i like to keep the stack current on versions so it does not fall far behind keeping in mind updates of versions works across dependencies.  For example, if I update Vaadin, I will also update Spring Boot to the latest compatible version.  This keeps the codebase more maintainable and allows us to take advantage of new features and improvements in the frameworks.  Updates to these and the Java version need tom consider the smaller dependencies for things like PDF creation as well as they are key features.
-- Use Java 17 features where appropriate (records, pattern matching, text blocks, etc.)
+- Use Java 21 features where appropriate (records, pattern matching, text blocks, virtual threads, etc.)
 - Prefer constructor injection over field injection (`@Autowired` on fields)
 - Follow Spring Boot conventions — keep configuration in `application.properties`, use `@ConfigurationProperties` for typed config
 - Use Lombok in `dm_collector` (`@Data`, `@Builder`, `@Slf4j`, etc.) but not a hard fast rule where cleaner solutions are available; Generally not used in `delivermoreAdmin` unless already established

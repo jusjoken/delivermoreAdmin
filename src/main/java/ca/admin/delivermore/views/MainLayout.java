@@ -1,5 +1,29 @@
 package ca.admin.delivermore.views;
 
+import java.util.Optional;
+
+import org.springframework.core.env.Environment;
+
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.applayout.AppLayout;
+import com.vaadin.flow.component.applayout.DrawerToggle;
+import com.vaadin.flow.component.avatar.Avatar;
+import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.contextmenu.ContextMenu;
+import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.Footer;
+import com.vaadin.flow.component.html.H1;
+import com.vaadin.flow.component.html.Header;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.sidenav.SideNav;
+import com.vaadin.flow.component.sidenav.SideNavItem;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationObserver;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.server.auth.AccessAnnotationChecker;
+import com.vaadin.flow.server.auth.AnonymousAllowed;
+
 import ca.admin.delivermore.collector.data.tookan.Driver;
 import ca.admin.delivermore.components.appnav.BrandExpression;
 import ca.admin.delivermore.data.service.Registry;
@@ -8,7 +32,13 @@ import ca.admin.delivermore.security.AuthenticatedUser;
 import ca.admin.delivermore.views.about.AboutView;
 import ca.admin.delivermore.views.asset.TabletAssetHistoryView;
 import ca.admin.delivermore.views.asset.TabletAssetsView;
-import ca.admin.delivermore.views.drivers.*;
+import ca.admin.delivermore.views.drivers.DriverAdjustmentTemplateView;
+import ca.admin.delivermore.views.drivers.DriverPayoutView;
+import ca.admin.delivermore.views.drivers.DriverRedeemGiftCardView;
+import ca.admin.delivermore.views.drivers.DriverReportView;
+import ca.admin.delivermore.views.drivers.DriversView;
+import ca.admin.delivermore.views.drivers.MyPayView;
+import ca.admin.delivermore.views.drivers.ScheduleView;
 import ca.admin.delivermore.views.home.HomeView;
 import ca.admin.delivermore.views.intuit.QBOConnectView;
 import ca.admin.delivermore.views.login.PasswordReset;
@@ -22,52 +52,28 @@ import ca.admin.delivermore.views.tasks.TasksByDayAndWeekView;
 import ca.admin.delivermore.views.tasks.TasksView;
 import ca.admin.delivermore.views.utility.GiftCardView;
 import ca.admin.delivermore.views.utility.TeamsView;
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.applayout.AppLayout;
-import com.vaadin.flow.component.applayout.DrawerToggle;
-import com.vaadin.flow.component.avatar.Avatar;
-import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.contextmenu.ContextMenu;
-import com.vaadin.flow.component.html.*;
-import com.vaadin.flow.component.icon.VaadinIcon;
-import com.vaadin.flow.component.sidenav.SideNav;
-import com.vaadin.flow.component.sidenav.SideNavItem;
-import com.vaadin.flow.router.PageTitle;
-import com.vaadin.flow.server.auth.AccessAnnotationChecker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
-
-import java.util.Optional;
 
 /**
  * The main view is a top-level placeholder for other views.
  */
-public class MainLayout extends AppLayout {
+@AnonymousAllowed
+public class MainLayout extends AppLayout implements AfterNavigationObserver {
 
-    private Logger log = LoggerFactory.getLogger(MainLayout.class);
-
-    @Value("${security.enabled:true}")
-    private boolean securityEnabled;
+    private final boolean securityEnabled;
 
     private H1 viewTitle;
 
-    private AuthenticatedUser authenticatedUser;
-    private AccessAnnotationChecker accessChecker;
-    private OAuth2Configuration oAuth2Configuration;
-
-    @Autowired
-    Environment env;
+    private final AuthenticatedUser authenticatedUser;
+    private final AccessAnnotationChecker accessChecker;
+    private final OAuth2Configuration oAuth2Configuration;
 
     public MainLayout(AuthenticatedUser authenticatedUser, AccessAnnotationChecker accessChecker, Environment env) {
         this.authenticatedUser = authenticatedUser;
         this.accessChecker = accessChecker;
         this.oAuth2Configuration = Registry.getBean(OAuth2Configuration.class);
-        if(env.containsProperty("security.enabled")){
+        if (env.containsProperty("security.enabled")) {
             this.securityEnabled = Boolean.parseBoolean(env.getProperty("security.enabled"));
-        }else{
+        } else {
             this.securityEnabled = true;
         }
 
@@ -101,8 +107,7 @@ public class MainLayout extends AppLayout {
     }
     
     private SideNav createNavigation() {
-        // SideNav is not yet an official component.
-        // For documentation, visit https://github.com/vaadin/vcf-nav#readme
+        // Built-in Vaadin SideNav for application navigation.
         SideNav nav = new SideNav();
         nav.addClassNames("app-nav");
 
@@ -294,8 +299,7 @@ public class MainLayout extends AppLayout {
     }
 
     @Override
-    protected void afterNavigation() {
-        super.afterNavigation();
+    public void afterNavigation(AfterNavigationEvent event) {
         viewTitle.setText(getCurrentPageTitle());
     }
 
