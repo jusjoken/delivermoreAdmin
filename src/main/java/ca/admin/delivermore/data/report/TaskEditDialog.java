@@ -8,7 +8,6 @@ import ca.admin.delivermore.collector.data.entity.TaskEntity;
 import ca.admin.delivermore.collector.data.service.OrderDetailRepository;
 import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
-import ca.admin.delivermore.components.custom.ButtonNumberField;
 import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.views.UIUtilities;
 
@@ -84,7 +83,8 @@ public class TaskEditDialog {
     //Fields defined here
     //global fields
     private NumberField fieldGlobalSubTotal = UIUtilities.getNumberField(Boolean.FALSE);
-    private ButtonNumberField fieldGlobalTaxes = UIUtilities.getButtonNumberField("",Boolean.FALSE,"$");
+    private NumberField fieldGlobalTaxes = UIUtilities.getNumberField(Boolean.FALSE);
+    private Button fieldGlobalTaxesCalcButton = new Button(VaadinIcon.COGS.create());
 
     private Checkbox fieldWebOrder = new Checkbox();
     private Checkbox fieldFeesOnly = new Checkbox();
@@ -95,7 +95,8 @@ public class TaskEditDialog {
     private NumberField fieldDeliveryFee = UIUtilities.getNumberField(Boolean.FALSE);
     private NumberField fieldServiceFeePercent = UIUtilities.getNumberField("",Boolean.FALSE,"%");
     private NumberField fieldServiceFee = UIUtilities.getNumberField(Boolean.FALSE);
-    private ButtonNumberField fieldTotalSale = UIUtilities.getButtonNumberField("",Boolean.FALSE,"$");
+    private NumberField fieldTotalSale = UIUtilities.getNumberField(Boolean.FALSE);
+    private Button fieldTotalSaleCalcButton = new Button(VaadinIcon.CALC.create());
     private NumberField fieldTip = UIUtilities.getNumberField(Boolean.FALSE);
     private NumberField fieldTotalWithTip = UIUtilities.getNumberField("",true,"$");
     private Checkbox fieldTipIssue = new Checkbox();
@@ -135,7 +136,7 @@ public class TaskEditDialog {
         dialogLayout.setSpacing(false);
         dialogLayout.setPadding(false);
         dialogLayout.setAlignItems(FlexComponent.Alignment.STRETCH);
-        dialogLayout.getStyle().set("width", "300px").set("max-width", "100%");
+        UIUtilities.applyDialogWidth(dialog, dialogLayout, UIUtilities.DialogWidthPreset.MEDIUM);
 
         dialog.add(dialogLayout);
         dialog.setHeaderTitle("Task Edit");
@@ -180,6 +181,7 @@ public class TaskEditDialog {
         shortcutRegistration.setEventPropagationAllowed(false);
         shortcutRegistration.setBrowserDefaultAllowed(true);
 
+        UIUtilities.applyResponsiveDialogFooter(footerLayout);
         dialog.getFooter().add(footerLayout);
 
         //one time configuration for any fields
@@ -187,19 +189,34 @@ public class TaskEditDialog {
         fieldPaymentMethod.setReadOnly(false);
         fieldPaymentMethod.setEmptySelectionAllowed(false);
         fieldPaymentMethod.setRequiredIndicatorVisible(true);
-        fieldPaymentMethod.setWidth("150px");
+        fieldPaymentMethod.setWidthFull();
         fieldPaymentMethod.setPlaceholder("Select payment method");
         fieldNotes.setReadOnly(true);
         fieldNotes.addThemeVariants(TextAreaVariant.LUMO_SMALL);
+        fieldNotes.setWidthFull();
 
-        fieldGlobalTaxes.setButtonIcon(VaadinIcon.COGS.create());
-        fieldTotalSale.setButtonIcon(VaadinIcon.CALC.create());
+        // ensure all fields fill their column in the form layout
+        fieldGlobalSubTotal.setWidthFull();
+        fieldGlobalTaxes.setWidthFull();
+        fieldPaidToVendor.setWidthFull();
+        fieldReceiptTotal.setWidthFull();
+        fieldDeliveryFee.setWidthFull();
+        fieldServiceFeePercent.setWidthFull();
+        fieldServiceFee.setWidthFull();
+        fieldTotalSale.setWidthFull();
+        fieldTip.setWidthFull();
+        fieldTotalWithTip.setWidthFull();
+
+        fieldGlobalTaxesCalcButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_ICON, ButtonVariant.LUMO_SMALL);
+        fieldGlobalTaxes.setSuffixComponent(fieldGlobalTaxesCalcButton);
+        fieldTotalSaleCalcButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_ICON, ButtonVariant.LUMO_SMALL);
+        fieldTotalSale.setSuffixComponent(fieldTotalSaleCalcButton);
 
         fieldPaidToVendor.addValueChangeListener(item -> dialogValidate());
         fieldReceiptTotal.addValueChangeListener(item -> dialogValidate());
         fieldGlobalSubTotal.addValueChangeListener(item -> dialogValidate());
         fieldGlobalTaxes.addValueChangeListener(item -> dialogValidate());
-        fieldGlobalTaxes.addClickListener(
+        fieldGlobalTaxesCalcButton.addClickListener(
                 event -> {
                     dialogTaxesCalc();
                     dialogValidate();
@@ -212,7 +229,7 @@ public class TaskEditDialog {
         fieldServiceFeePercent.addValueChangeListener(item -> dialogValidate());
         fieldServiceFee.addValueChangeListener(item -> dialogValidate());
         fieldTotalSale.addValueChangeListener(item -> dialogValidate());
-        fieldTotalSale.addClickListener(
+        fieldTotalSaleCalcButton.addClickListener(
                 event -> {
                     dialogCalc();
                     dialogValidate();
@@ -296,7 +313,7 @@ public class TaskEditDialog {
         //update taskEntity from fields
         if(displayMode.equals(DisplayMode.GLOBAL)){
             this.taskEntity.setGlobalSubtotal(fieldGlobalSubTotal.getValue());
-            this.taskEntity.setGlobalTotalTaxes(fieldGlobalTaxes.getNumberField().getValue());
+            this.taskEntity.setGlobalTotalTaxes(fieldGlobalTaxes.getValue());
             if(posGlobal){
                 this.taskEntity.setPaidToVendor(fieldPaidToVendor.getValue());
             }
@@ -311,7 +328,7 @@ public class TaskEditDialog {
         this.taskEntity.setDeliveryFee(fieldDeliveryFee.getValue());
         this.taskEntity.setServiceFeePercent(fieldServiceFeePercent.getValue());
         this.taskEntity.setServiceFee(fieldServiceFee.getValue());
-        this.taskEntity.setTotalSale(fieldTotalSale.getNumberField().getValue());
+        this.taskEntity.setTotalSale(fieldTotalSale.getValue());
         this.taskEntity.setTip(fieldTip.getValue());
         this.taskEntity.setTipInNotesIssue(fieldTipIssue.getValue());
 
@@ -351,7 +368,7 @@ public class TaskEditDialog {
             if(displayMode.equals(DisplayMode.GLOBAL)){
                 log.info("dialogValidate: globalSubtotal:" + this.taskEntity.getGlobalSubtotal() + " field:" + fieldGlobalSubTotal.getValue());
                 validateField(fieldGlobalSubTotal,this.taskEntity.getGlobalSubtotal());
-                validateField(fieldGlobalTaxes.getNumberField(),this.taskEntity.getGlobalTotalTaxes());
+                validateField(fieldGlobalTaxes,this.taskEntity.getGlobalTotalTaxes());
                 if(posGlobal){
                     validateField(fieldPaidToVendor,this.taskEntity.getPaidToVendor());
                 }
@@ -367,7 +384,7 @@ public class TaskEditDialog {
             validateField(fieldDeliveryFee,this.taskEntity.getDeliveryFee());
             validateField(fieldServiceFee,this.taskEntity.getServiceFee());
             validateField(fieldServiceFeePercent,getServiceFeePercent());
-            validateField(fieldTotalSale.getNumberField(),this.taskEntity.getTotalSale());
+            validateField(fieldTotalSale,this.taskEntity.getTotalSale());
             validateField(fieldTip,this.taskEntity.getTip());
             validateCheckbox(fieldTipIssue,this.taskEntity.getTipInNotesIssue());
             if(customTaskConverted) hasChangedValues = Boolean.TRUE;
@@ -433,12 +450,9 @@ public class TaskEditDialog {
     public FormLayout showTask(TaskEntity taskEntity){
         validationEnabled = Boolean.FALSE;
         FormLayout taskFormLayout = new FormLayout();
-        taskFormLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0px", 1, FormLayout.ResponsiveStep.LabelsPosition.ASIDE));
-        /*
-        taskFormLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1, FormLayout.ResponsiveStep.LabelsPosition.TOP),
-                new FormLayout.ResponsiveStep("100px", 1, FormLayout.ResponsiveStep.LabelsPosition.ASIDE));
-
-         */
+        taskFormLayout.setResponsiveSteps(
+                new FormLayout.ResponsiveStep("0px", 1, FormLayout.ResponsiveStep.LabelsPosition.TOP),
+                new FormLayout.ResponsiveStep("420px", 2, FormLayout.ResponsiveStep.LabelsPosition.ASIDE));
 
         this.taskEntity = taskEntity;
 
@@ -460,8 +474,10 @@ public class TaskEditDialog {
         log.info("showTask: display mode set to:" + displayMode);
         taskFormLayout.removeAll();
 
-        //add the header
-        taskFormLayout.add(getTaskHeader(this.taskEntity, Boolean.FALSE));
+        //add the header spanning both columns
+        HorizontalLayout taskHeader = getTaskHeader(this.taskEntity, Boolean.FALSE);
+        taskFormLayout.add(taskHeader);
+        taskFormLayout.setColspan(taskHeader, 2);
 
         //common fields
 
@@ -481,7 +497,7 @@ public class TaskEditDialog {
             taskFormLayout.addFormItem(fieldTotalWithTip,"Total with tip");
             //TODO:: only add if superUser
             taskFormLayout.addFormItem(fieldTipIssue,"Tip issue");
-            taskFormLayout.addFormItem(fieldNotes, "Notes");
+            taskFormLayout.setColspan(taskFormLayout.addFormItem(fieldNotes, "Notes"), 2);
             dialogConvertCustom.setVisible(false);
         }else if(this.displayMode.equals(DisplayMode.CUSTOM)){
             taskFormLayout.addFormItem(fieldReceiptTotal,"Receipt total");
@@ -495,7 +511,7 @@ public class TaskEditDialog {
             taskFormLayout.addFormItem(fieldTotalWithTip,"Total with tip");
             //TODO:: only add if superUser
             taskFormLayout.addFormItem(fieldTipIssue,"Tip issue");
-            taskFormLayout.addFormItem(fieldNotes, "Notes");
+            taskFormLayout.setColspan(taskFormLayout.addFormItem(fieldNotes, "Notes"), 2);
             dialogConvertCustom.setVisible(true);
         }else{
             //Phonein
@@ -510,7 +526,7 @@ public class TaskEditDialog {
             taskFormLayout.addFormItem(fieldTotalWithTip,"Total with tip");
             //TODO:: only add if superUser
             taskFormLayout.addFormItem(fieldTipIssue,"Tip issue");
-            taskFormLayout.addFormItem(fieldNotes, "Notes");
+            taskFormLayout.setColspan(taskFormLayout.addFormItem(fieldNotes, "Notes"), 2);
             dialogConvertCustom.setVisible(false);
         }
 
@@ -571,6 +587,7 @@ public class TaskEditDialog {
 
     public HorizontalLayout getTaskHeader(TaskEntity item, Boolean fullHeader){
         HorizontalLayout row = new HorizontalLayout();
+        row.setWidthFull();
         row.setAlignItems(FlexComponent.Alignment.CENTER);
 
         Avatar driverName = new Avatar();
@@ -597,13 +614,13 @@ public class TaskEditDialog {
         taskDateTime.getStyle()
                 .set("color", "var(--lumo-secondary-text-color)")
                 .set("font-size", "var(--lumo-font-size-s)");
-        taskDateTime.setWidth("150px");
-        //columnInfo.add(taskDateTime);
+        //columnInfo.add(taskDateTime)
 
         Span status = new Span(item.getJobStatusName());
         status.getElement().getThemeList().add(getStatusStyle(item.getJobStatus()));
         //columnInfo.add(status);
         HorizontalLayout dateAndStatus = UIUtilities.getHorizontalLayout(false,true,false);
+        dateAndStatus.setWrap(true);
         dateAndStatus.add(taskDateTime,status);
         columnInfo.add(dateAndStatus);
 
@@ -647,6 +664,7 @@ public class TaskEditDialog {
         }
 
         row.add(columnAvatars, columnInfo);
+        row.setFlexGrow(1, columnInfo);
         row.getStyle().set("line-height", "var(--lumo-line-height-m)");
         return row;
     }
@@ -703,7 +721,7 @@ public class TaskEditDialog {
         dialogAdvLayout.setSpacing(false);
         dialogAdvLayout.setPadding(false);
         dialogAdvLayout.setAlignItems(FlexComponent.Alignment.STRETCH);
-        dialogAdvLayout.getStyle().set("width", "400px").set("max-width", "100%");
+        UIUtilities.applyDialogWidth(dialogAdv, dialogAdvLayout, UIUtilities.DialogWidthPreset.COMPACT);
 
         dialogAdv.add(dialogAdvLayout);
         dialogAdv.setHeaderTitle("Convert Custom Task");
@@ -732,6 +750,7 @@ public class TaskEditDialog {
         shortcutRegistration.setEventPropagationAllowed(false);
         shortcutRegistration.setBrowserDefaultAllowed(true);
 
+        UIUtilities.applyResponsiveDialogFooter(footerLayoutAdv);
         dialogAdv.getFooter().add(footerLayoutAdv);
 
         //one time configuration for any fields

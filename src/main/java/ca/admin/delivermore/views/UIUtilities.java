@@ -8,6 +8,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.details.DetailsVariant;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.html.*;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -246,6 +247,39 @@ public class UIUtilities {
         }
         icon.getStyle().set("padding", "var(--lumo-space-xs");
         return icon;
+    }
+
+    public enum DialogWidthPreset {
+        COMPACT,
+        MEDIUM,
+        LARGE,
+        WIDE,
+        XLARGE
+    }
+
+    public static void applyDialogWidth(Dialog dialog, VerticalLayout layout, DialogWidthPreset preset) {
+        String width = switch (preset) {
+            case COMPACT -> "min(34rem, 92vw)";
+            case MEDIUM  -> "min(44rem, 92vw)";
+            case LARGE   -> "min(48rem, 92vw)";
+            case WIDE    -> "min(64rem, 92vw)";
+            case XLARGE  -> "min(72rem, 92vw)";
+        };
+        dialog.setWidth(width);
+        dialog.setMaxWidth("92vw");
+        layout.getStyle()
+                .set("width", "100%")
+                .set("min-width", "0")
+                .set("max-width", "100%");
+    }
+
+    public static void applyResponsiveDialogFooter(HorizontalLayout footerLayout) {
+        footerLayout.setWidthFull();
+        footerLayout.setPadding(false);
+        footerLayout.setMargin(false);
+        footerLayout.setSpacing(true);
+        footerLayout.setWrap(true);
+        footerLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
     }
 
     public static class MenuEntry{
