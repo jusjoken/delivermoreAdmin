@@ -37,6 +37,8 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.renderer.LocalDateRenderer;
 import com.vaadin.flow.data.renderer.NumberRenderer;
 import com.vaadin.flow.server.StreamResource;
+import com.vaadin.flow.theme.lumo.LumoIcon;
+
 import fr.opensagres.xdocreport.converter.ConverterTypeTo;
 import fr.opensagres.xdocreport.converter.ConverterTypeVia;
 import fr.opensagres.xdocreport.converter.Options;
@@ -877,7 +879,7 @@ public class RestPayoutSummary implements TaskListRefreshNeededListener {
         grid.setItems(restAdjustmentList);
         VerticalLayout adjustmentsLayout = UIUtilities.getVerticalLayout();
         HorizontalLayout periodAdustmentsToolbar = UIUtilities.getHorizontalLayout(true,true,false);
-        Icon addNewIcon = new Icon("lumo", "plus");
+        Icon addNewIcon = LumoIcon.PLUS.create();
         addNewIcon.setColor("green");
         Button adjustmentsAddNew = new Button("Add", addNewIcon);
         adjustmentsAddNew.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -895,7 +897,7 @@ public class RestPayoutSummary implements TaskListRefreshNeededListener {
         grid.addThemeVariants(GridVariant.LUMO_COMPACT);
         grid.setColumnReorderingAllowed(true);
         grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             //Button editButton = new Button("Edit");
             editIcon.addClickListener(e -> {
                 adjustmentDialog.setDialogMode(RestPayoutAdjustmentDialog.DialogMode.EDIT);
@@ -904,7 +906,7 @@ public class RestPayoutSummary implements TaskListRefreshNeededListener {
             return editIcon;
         }).setWidth("150px").setFlexGrow(0);
         grid.addComponentColumn(item -> {
-            Icon deleteIcon = new Icon("lumo", "cross");
+            Icon deleteIcon = LumoIcon.CROSS.create();
             deleteIcon.setColor("red");
             deleteIcon.addClickListener(e -> {
                 adjustmentDialog.setDialogMode(RestPayoutAdjustmentDialog.DialogMode.DELETE);

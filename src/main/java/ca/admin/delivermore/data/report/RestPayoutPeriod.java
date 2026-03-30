@@ -8,6 +8,7 @@ import ca.admin.delivermore.data.entity.RestAdjustment;
 import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.data.service.RestAdjustmentRepository;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -25,6 +26,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.renderer.LocalDateRenderer;
 import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import com.vaadin.flow.data.renderer.NumberRenderer;
+
 import fr.opensagres.xdocreport.converter.ConverterTypeTo;
 import fr.opensagres.xdocreport.converter.ConverterTypeVia;
 import fr.opensagres.xdocreport.converter.Options;
@@ -34,6 +36,7 @@ import fr.opensagres.xdocreport.document.registry.XDocReportRegistry;
 import fr.opensagres.xdocreport.template.IContext;
 import fr.opensagres.xdocreport.template.TemplateEngineKind;
 import fr.opensagres.xdocreport.template.formatter.FieldsMetadata;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +48,8 @@ import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 public class RestPayoutPeriod implements Serializable {
 
@@ -248,7 +253,7 @@ public class RestPayoutPeriod implements Serializable {
         NativeLabel gridLabel = new NativeLabel(labelString);
 
         HorizontalLayout periodAdustmentsToolbar = UIUtilities.getHorizontalLayout(true,true,false);
-        Icon addNewIcon = new Icon("lumo", "plus");
+        Icon addNewIcon = LumoIcon.PLUS.create();
         addNewIcon.setColor("green");
         Button adjustmentsAddNew = new Button("Add", addNewIcon);
 
@@ -269,7 +274,7 @@ public class RestPayoutPeriod implements Serializable {
             grid.addThemeVariants(GridVariant.LUMO_COMPACT);
             grid.setColumnReorderingAllowed(true);
             grid.addComponentColumn(item -> {
-                Icon editIcon = new Icon("lumo", "edit");
+                Icon editIcon = LumoIcon.EDIT.create();
                 //Button editButton = new Button("Edit");
                 editIcon.addClickListener(e -> {
                     adjustmentDialog.setDialogMode(RestPayoutAdjustmentDialog.DialogMode.EDIT);
@@ -278,7 +283,7 @@ public class RestPayoutPeriod implements Serializable {
                 return editIcon;
             }).setWidth("150px").setFlexGrow(0);
             grid.addComponentColumn(item -> {
-                Icon deleteIcon = new Icon("lumo", "cross");
+                Icon deleteIcon = LumoIcon.CROSS.create();
                 deleteIcon.setColor("red");
                 deleteIcon.addClickListener(e -> {
                     adjustmentDialog.setDialogMode(RestPayoutAdjustmentDialog.DialogMode.DELETE);

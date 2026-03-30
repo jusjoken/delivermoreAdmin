@@ -24,6 +24,8 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.theme.lumo.LumoIcon;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -162,7 +164,7 @@ public class RestInvoiceView extends Main implements TaskListRefreshNeededListen
         grid.addThemeVariants(GridVariant.LUMO_COMPACT);
 
         Grid.Column buttonColumn = grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             editIcon.addClickListener(e -> {
                 taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);
                 taskEditDialog.dialogOpen(item);

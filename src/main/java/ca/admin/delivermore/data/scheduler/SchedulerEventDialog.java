@@ -1,13 +1,25 @@
 package ca.admin.delivermore.data.scheduler;
 
-import ca.admin.delivermore.collector.data.service.DriversRepository;
-import ca.admin.delivermore.collector.data.service.EmailService;
-import ca.admin.delivermore.collector.data.tookan.Driver;
-import ca.admin.delivermore.components.custom.Divider;
-import ca.admin.delivermore.data.service.Registry;
-import ca.admin.delivermore.data.service.SchedulerEventGroupRepository;
-import ca.admin.delivermore.data.service.SchedulerEventRepository;
-import ca.admin.delivermore.views.UIUtilities;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.vaadin.stefan.fullcalendar.CalendarView;
+import org.vaadin.stefan.fullcalendar.CalendarViewImpl;
+import org.vaadin.stefan.fullcalendar.EntryTimeChangedEvent;
+import org.vaadin.stefan.fullcalendar.ResourceEntry;
+import org.vaadin.stefan.fullcalendar.SchedulerView;
+
 import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.ShortcutRegistration;
@@ -31,18 +43,16 @@ import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.component.timepicker.TimePickerVariant;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.vaadin.stefan.fullcalendar.*;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
-import java.time.*;
-import java.time.format.TextStyle;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import ca.admin.delivermore.collector.data.service.DriversRepository;
+import ca.admin.delivermore.collector.data.service.EmailService;
+import ca.admin.delivermore.collector.data.tookan.Driver;
+import ca.admin.delivermore.components.custom.Divider;
+import ca.admin.delivermore.data.service.Registry;
+import ca.admin.delivermore.data.service.SchedulerEventGroupRepository;
+import ca.admin.delivermore.data.service.SchedulerEventRepository;
+import ca.admin.delivermore.views.UIUtilities;
 
 public class SchedulerEventDialog {
     public enum DialogMode{
@@ -55,15 +65,15 @@ public class SchedulerEventDialog {
 
     private Scheduler.EditType editType = Scheduler.EditType.CALENDAR;
     private Button dialogOkButton = new Button();
-    private Icon okIcon = new Icon("lumo", "checkmark");
-    private Button dialogCancelButton = new Button(new Icon("lumo", "cross"));
+    private Icon okIcon = LumoIcon.CHECKMARK.create();
+    private Button dialogCancelButton = new Button(LumoIcon.CROSS.create());
     private Button dialogResetButton = new Button();
 
     private Button dialogPublishButton = new Button(new Icon(VaadinIcon.CHECK));
 
-    private Icon resetIcon = new Icon("lumo", "undo");
+    private Icon resetIcon = LumoIcon.UNDO.create();
     private Button dialogDeleteButton = new Button();
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
 
     private Boolean validationEnabled = Boolean.FALSE;
     private Boolean hasChangedValues = Boolean.FALSE;
@@ -125,7 +135,7 @@ public class SchedulerEventDialog {
         dialog.add(dialogLayout);
         dialog.setHeaderTitle("Event");
 
-        Icon deleteIcon = new Icon("lumo", "cross");
+        Icon deleteIcon = LumoIcon.CROSS.create();
         deleteIcon.setColor("red");
         dialogDeleteButton.setIcon(deleteIcon);
         dialogDeleteButton.setText("Delete");

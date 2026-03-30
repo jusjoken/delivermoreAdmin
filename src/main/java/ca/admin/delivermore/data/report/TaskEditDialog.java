@@ -11,6 +11,7 @@ import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
 import ca.admin.delivermore.components.custom.ButtonNumberField;
 import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.ShortcutRegistration;
 import com.vaadin.flow.component.Shortcuts;
@@ -24,6 +25,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -32,6 +34,7 @@ import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextAreaVariant;
 import com.vaadin.flow.component.textfield.TextField;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +44,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 public class TaskEditDialog {
 
@@ -68,12 +73,12 @@ public class TaskEditDialog {
     private Button dialogResetButton = new Button("Reset");
     private Button dialogOkButton = new Button("OK");
     private Button dialogCancelButton = new Button("Cancel");
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
-    private Button dialogConvertCustom = new Button(new Icon("vaadin","exchange"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
+    private Button dialogConvertCustom = new Button(VaadinIcon.EXCHANGE.create());
 
     private Button dialogAdvOkButton = new Button("OK");
     private Button dialogAdvCancelButton = new Button("Cancel");
-    private Button dialogAdvCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogAdvCloseButton = new Button(LumoIcon.CROSS.create());
 
 
     //Fields defined here
@@ -187,8 +192,8 @@ public class TaskEditDialog {
         fieldNotes.setReadOnly(true);
         fieldNotes.addThemeVariants(TextAreaVariant.LUMO_SMALL);
 
-        fieldGlobalTaxes.setButtonIcon(new Icon("vaadin", "cogs"));
-        fieldTotalSale.setButtonIcon(new Icon("vaadin","calc"));
+        fieldGlobalTaxes.setButtonIcon(VaadinIcon.COGS.create());
+        fieldTotalSale.setButtonIcon(VaadinIcon.CALC.create());
 
         fieldPaidToVendor.addValueChangeListener(item -> dialogValidate());
         fieldReceiptTotal.addValueChangeListener(item -> dialogValidate());

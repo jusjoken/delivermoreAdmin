@@ -20,6 +20,7 @@ import ca.admin.delivermore.data.service.intuit.controller.QBOResult;
 import ca.admin.delivermore.data.service.intuit.domain.OAuth2Configuration;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.opencsv.bean.HeaderColumnNameMappingStrategy;
 import com.opencsv.bean.StatefulBeanToCsv;
 import com.opencsv.bean.StatefulBeanToCsvBuilder;
@@ -46,6 +47,7 @@ import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Main;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -57,6 +59,7 @@ import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.StreamResource;
+
 import fr.opensagres.xdocreport.converter.ConverterTypeTo;
 import fr.opensagres.xdocreport.converter.ConverterTypeVia;
 import fr.opensagres.xdocreport.converter.Options;
@@ -66,6 +69,7 @@ import fr.opensagres.xdocreport.document.registry.XDocReportRegistry;
 import fr.opensagres.xdocreport.template.IContext;
 import fr.opensagres.xdocreport.template.TemplateEngineKind;
 import fr.opensagres.xdocreport.template.formatter.FieldsMetadata;
+
 import org.apache.commons.collections4.comparators.FixedOrderComparator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,6 +80,7 @@ import org.springframework.data.domain.Sort;
 import org.vaadin.olli.FileDownloadWrapper;
 
 import jakarta.annotation.security.RolesAllowed;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.time.DayOfWeek;
@@ -85,6 +90,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipOutputStream;
+
+import com.vaadin.flow.theme.lumo.Lumo;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 @PageTitle("Driver Payouts")
 @Route(value = "driverpayouts", layout = MainLayout.class)
@@ -146,7 +154,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
     private ComboBox<DriverAdjustmentTemplate> daDialodAdjustmentNote = new ComboBox<>("Adjustment note");
     private Button daDialogOkButton = new Button("OK");
     private Button daDialogCancelButton = new Button("Cancel");
-    private Button daDialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button daDialogCloseButton = new Button(LumoIcon.CROSS.create());
 
     private List<DriverAdjustmentTemplate> driverAdjustmentTemplateList = new ArrayList<>();
 
@@ -418,7 +426,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
 
         //Add the adjustments in a Grid to the summary content within a Details
         HorizontalLayout periodAdustmentsToolbar = UIUtilities.getHorizontalLayout(true,true,false);
-        Icon addNewIcon = new Icon("lumo", "plus");
+        Icon addNewIcon = LumoIcon.PLUS.create();
         addNewIcon.setColor("green");
         Button adjustmentsAddNew = new Button("Add", addNewIcon);
         adjustmentsAddNew.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -441,7 +449,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         summaryAdjustmentGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         summaryAdjustmentGrid.addThemeVariants(GridVariant.LUMO_COMPACT);
         summaryAdjustmentGrid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             //Button editButton = new Button("Edit");
             editIcon.addClickListener(e -> {
                 daDialogMode = DialogMode.EDIT;
@@ -450,7 +458,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
             return editIcon;
         }).setWidth("150px").setFlexGrow(0);
         summaryAdjustmentGrid.addComponentColumn(item -> {
-            Icon deleteIcon = new Icon("lumo", "cross");
+            Icon deleteIcon = LumoIcon.CROSS.create();
             deleteIcon.setColor("red");
             deleteIcon.addClickListener(e -> {
                 daDialogMode = DialogMode.DELETE;
@@ -505,7 +513,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         summaryTipIssuesGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         summaryTipIssuesGrid.addThemeVariants(GridVariant.LUMO_COMPACT);
         summaryTipIssuesGrid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             editIcon.addClickListener(e -> {
                 taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);
                 taskEditDialog.dialogOpen(item.getJobId());
@@ -597,7 +605,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                 driverDayGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
                 driverDayGrid.addThemeVariants(GridVariant.LUMO_COMPACT);
                 driverDayGrid.addComponentColumn(item -> {
-                    Icon editIcon = new Icon("lumo", "edit");
+                    Icon editIcon = LumoIcon.EDIT.create();
                     editIcon.addClickListener(e -> {
                         taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);
                         taskEditDialog.dialogOpen(item.getJobId());
@@ -605,7 +613,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                     return editIcon;
                 }).setWidth("150px").setFlexGrow(0).setFrozen(true);
                 driverDayGrid.addComponentColumn(item -> {
-                    Icon refreshIcon = new Icon("lumo", "reload");
+                    Icon refreshIcon = LumoIcon.RELOAD.create();
                     refreshIcon.addClickListener(e -> {
                         refreshTaskFromTookan(item);
                     });
@@ -658,7 +666,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
             driverAdjustmentsContent.add(driverAdustmentsToolbar, driverAdjustmentGrid);
             driverWeekAdjustments.add(driverAdjustmentsContent);
             driverAdjustmentGrid.addComponentColumn(item -> {
-                Icon editIcon = new Icon("lumo", "edit");
+                Icon editIcon = LumoIcon.EDIT.create();
                 //Button editButton = new Button("Edit");
                 editIcon.addClickListener(e -> {
                     daDialogMode = DialogMode.EDIT;
@@ -667,7 +675,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
                 return editIcon;
             }).setWidth("150px").setFlexGrow(0);
             driverAdjustmentGrid.addComponentColumn(item -> {
-                Icon deleteIcon = new Icon("lumo", "cross");
+                Icon deleteIcon = LumoIcon.CROSS.create();
                 deleteIcon.setColor("red");
                 deleteIcon.addClickListener(e -> {
                     daDialogMode = DialogMode.DELETE;
@@ -956,7 +964,7 @@ public class DriverPayoutView extends Main implements TaskListRefreshNeededListe
         daDialodAdjustmentNote.setAllowCustomValue(true);
         daDialodAdjustmentNote.setPlaceholder("Select or enter note");
 
-        daDialodAdjustmentAmount.setButtonIcon(new Icon("vaadin", "plus-minus"));
+        daDialodAdjustmentAmount.setButtonIcon(VaadinIcon.PLUS_MINUS.create());
         /*
         daDialodAdjustmentAmount.getNumberField().addValueChangeListener(item -> {
             daDialogValidate();

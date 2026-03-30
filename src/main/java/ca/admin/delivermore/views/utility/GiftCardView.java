@@ -20,6 +20,7 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.NativeLabel;
 import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -31,6 +32,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 import ca.admin.delivermore.collector.data.service.EmailService;
 import ca.admin.delivermore.components.custom.ButtonTextField;
@@ -44,6 +46,7 @@ import ca.admin.delivermore.gridexporter.GridExporter;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
+
 
 @PageTitle("Gift Cards")
 @Route(value = "giftcards", layout = MainLayout.class)
@@ -63,12 +66,12 @@ public class GiftCardView extends VerticalLayout {
     private DialogMode dialogMode = DialogMode.EDIT;
 
     private Button dialogOkButton = new Button("OK");
-    private Icon okIcon = new Icon("lumo", "checkmark");
-    private Icon resetIcon = new Icon("lumo", "undo");
+    private Icon okIcon = LumoIcon.CHECKMARK.create();
+    private Icon resetIcon = LumoIcon.UNDO.create();
 
     private Button dialogResetButton = new Button("Reset");
     private Button dialogCancelButton = new Button("Cancel");
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
 
     private ButtonTextField dialogCode = new ButtonTextField("Gift Card Code");
     private DatePicker dialogIssueDate = new DatePicker("Issue Date");
@@ -125,7 +128,7 @@ public class GiftCardView extends VerticalLayout {
         refreshButton.addClickListener(e -> {
             refreshGrid();
         });
-        Icon addNewIcon = new Icon("lumo", "plus");
+        Icon addNewIcon = LumoIcon.PLUS.create();
         addNewIcon.setColor("green");
         Button addNew = new Button("Add", addNewIcon);
         addNew.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -156,7 +159,7 @@ public class GiftCardView extends VerticalLayout {
 
         GridExporter<GiftCardEntity> exporter = GridExporter.createFor(grid);
         Grid.Column editIconColumn = grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             editIcon.setTooltipText("Edit gift card");
             //Button editButton = new Button("Edit");
             editIcon.addClickListener(e -> {
@@ -183,7 +186,7 @@ public class GiftCardView extends VerticalLayout {
         exporter.setExportColumn(editIconColumn,false);
 
         Grid.Column emailIconColumn = grid.addComponentColumn(item -> {
-            Icon emailIcon = new Icon("vaadin", "envelope-o");
+            Icon emailIcon = VaadinIcon.ENVELOPE_O.create();
             emailIcon.setTooltipText("Email gift card");
             emailIcon.addClickListener(e -> {
                 confirmEmailGiftCard(item);
@@ -193,7 +196,7 @@ public class GiftCardView extends VerticalLayout {
         exporter.setExportColumn(emailIconColumn,false);
 
         Grid.Column deleteIconColumn = grid.addComponentColumn(item -> {
-            Icon deleteIcon = new Icon("lumo", "cross");
+            Icon deleteIcon = LumoIcon.CROSS.create();
             deleteIcon.setTooltipText("Delete gift card");
             deleteIcon.setColor("red");
             deleteIcon.addClickListener(e -> {
@@ -232,7 +235,7 @@ public class GiftCardView extends VerticalLayout {
                 div.setSizeFull();
                 div.add(details);
                 Grid.Column detailsEditIconColumn = details.addComponentColumn(detailItem -> {
-                    Icon editIcon = new Icon("lumo", "edit");
+                    Icon editIcon = LumoIcon.EDIT.create();
                     editIcon.setTooltipText("Edit transaction amount");
                     editIcon.addClickListener(e -> {
                         editGiftCardTransaction(detailItem);
@@ -242,7 +245,7 @@ public class GiftCardView extends VerticalLayout {
                 detailsExporter.setExportColumn(detailsEditIconColumn,false);
 
                 Grid.Column detailsDeleteIconColumn = details.addComponentColumn(detailsItem -> {
-                    Icon detailsDeleteIcon = new Icon("lumo", "cross");
+                    Icon detailsDeleteIcon = LumoIcon.CROSS.create();
                     detailsDeleteIcon.setTooltipText("Delete transaction");
                     detailsDeleteIcon.setColor("red");
                     detailsDeleteIcon.addClickListener(e -> {
@@ -473,7 +476,7 @@ public class GiftCardView extends VerticalLayout {
         dialogCode.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
-        dialogCode.setButtonIcon(new Icon("lumo", "reload"));
+        dialogCode.setButtonIcon(LumoIcon.RELOAD.create());
         dialogCode.getTextField().setWidth("120px");
         dialogCode.addClickListener(e -> {
             dialogCode.setValue(selectedGiftCard.getUniqueCode());

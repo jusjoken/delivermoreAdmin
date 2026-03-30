@@ -1,6 +1,7 @@
 package ca.admin.delivermore.views;
 
 import ca.admin.delivermore.components.custom.ButtonNumberField;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
@@ -19,6 +20,7 @@ import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 public class UIUtilities {
 
@@ -203,7 +205,7 @@ public class UIUtilities {
 
         Div textDiv = new Div(new Text(text));
 
-        Button closeButton = new Button(new Icon("lumo", "cross"));
+        Button closeButton = new Button(LumoIcon.CROSS.create());
         closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
         closeButton.getElement().setAttribute("aria-label", "Close");
         closeButton.addClickListener(event -> {

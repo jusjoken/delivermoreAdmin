@@ -1,14 +1,19 @@
 package ca.admin.delivermore.views.tasks;
 
-import ca.admin.delivermore.collector.data.entity.TaskEntity;
-import ca.admin.delivermore.collector.data.service.RestaurantRepository;
-import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
-import ca.admin.delivermore.data.report.TaskListRefreshNeededListener;
-import ca.admin.delivermore.data.report.TaskEditDialog;
-import ca.admin.delivermore.gridexporter.ButtonsAlignment;
-import ca.admin.delivermore.gridexporter.GridExporter;
-import ca.admin.delivermore.views.MainLayout;
-import ca.admin.delivermore.views.UIUtilities;
+import java.text.Collator;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.List;
+import java.util.TreeSet;
+import java.util.stream.Stream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.vaadin.componentfactory.DateRange;
 import com.vaadin.componentfactory.EnhancedDateRangePicker;
 import com.vaadin.flow.component.button.Button;
@@ -28,17 +33,18 @@ import com.vaadin.flow.data.provider.ListDataProvider;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
+import ca.admin.delivermore.collector.data.entity.TaskEntity;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
+import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
+import ca.admin.delivermore.data.report.TaskEditDialog;
+import ca.admin.delivermore.data.report.TaskListRefreshNeededListener;
+import ca.admin.delivermore.gridexporter.ButtonsAlignment;
+import ca.admin.delivermore.gridexporter.GridExporter;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
-import java.text.Collator;
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.List;
-import java.util.stream.Stream;
 
 @PageTitle("Task List")
 @Route(value = "tasklist", layout = MainLayout.class)
@@ -271,7 +277,7 @@ public class TaskListView extends Main implements TaskListRefreshNeededListener 
         grid.addThemeVariants(GridVariant.LUMO_COMPACT);
 
         Grid.Column buttonColumn = grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             editIcon.addClickListener(e -> {
                 taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);
                 taskEditDialog.dialogOpen(item);

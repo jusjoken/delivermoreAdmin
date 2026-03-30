@@ -11,6 +11,7 @@ import ca.admin.delivermore.data.service.GiftCardTranactionRepository;
 import ca.admin.delivermore.security.AuthenticatedUser;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.html.NativeLabel;
@@ -20,11 +21,15 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+
 import jakarta.annotation.security.RolesAllowed;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 @PageTitle("Redeem Gift Card")
 @Route(value = "redeemgiftcard", layout = MainLayout.class)
@@ -111,7 +116,7 @@ public class DriverRedeemGiftCardView extends VerticalLayout {
                     redeemAmount(giftCard.getBalance());
                 });
                 ButtonNumberField redeemPart = UIUtilities.getButtonNumberField("Redeem portion", false, "$");
-                redeemPart.setButtonIcon(new Icon("lumo", "checkmark"));
+                redeemPart.setButtonIcon(LumoIcon.CHECKMARK.create());
                 redeemPart.focus();
                 redeemPart.addClickListener(e -> {
                     //call function to confirm and then adjust gift card balance

@@ -401,27 +401,6 @@ public class DriverPayoutWeek implements DriverPayoutInterface, Serializable {
             driverDayGrid.setWidthFull();
             driverDayGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
             driverDayGrid.addThemeVariants(GridVariant.LUMO_COMPACT);
-            /*
-            driverDayGrid.addComponentColumn(item -> {
-                Icon editIcon = new Icon("lumo", "edit");
-                editIcon.addClickListener(e -> {
-                    taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);
-                    taskEditDialog.dialogOpen(item.getJobId());
-                });
-                return editIcon;
-            }).setWidth("150px").setFlexGrow(0).setFrozen(true);
-
-             */
-            /*
-            driverDayGrid.addComponentColumn(item -> {
-                Icon refreshIcon = new Icon("lumo", "reload");
-                refreshIcon.addClickListener(e -> {
-                    refreshTaskFromTookan(item);
-                });
-                return refreshIcon;
-            }).setWidth("150px").setFlexGrow(0).setFrozen(true);
-
-             */
             driverDayGrid.addColumn(new LocalDateTimeRenderer<>(DriverPayoutEntity::getCreationDateTime,"MM-dd HH:mm"))
                     .setHeader("Date");
             driverDayGrid.addColumn(item -> UIUtilities.getNumberFormatted(item.getDriverPay())).setHeader("Pay").setTextAlign(ColumnTextAlign.END);
@@ -442,21 +421,6 @@ public class DriverPayoutWeek implements DriverPayoutInterface, Serializable {
             //driverDayGrid.asSingleSelect().addValueChangeListener(e -> editDriverPayoutEntity(e.getValue()));
 
         }
-        //add driver adjustments if any
-        /*
-        HorizontalLayout driverAdustmentsToolbar = UIUtilities.getHorizontalLayout(true,true,false);
-        Icon addNewIcon = new Icon("lumo", "plus");
-        addNewIcon.setColor("green");
-        Button driverAdjustmentsAddNew = new Button("Add", addNewIcon);
-        driverAdjustmentsAddNew.addThemeVariants(ButtonVariant.LUMO_SMALL);
-        driverAdjustmentsAddNew.addClickListener(e -> {
-            DriverAdjustment newDriverAdjustment = new DriverAdjustment();
-            newDriverAdjustment.setDriver(driversRepository.findDriverByFleetId(this.getFleetId()));
-            daDialogOpen(newDriverAdjustment,DriverPayoutView.DialogMode.NEW_FIXED_DRIVER);
-        });
-        driverAdustmentsToolbar.add(driverAdjustmentsAddNew);
-
-         */
 
         Details driverWeekAdjustments = new Details("Adjustments");
         driverWeekAdjustments.setOpened(true);
@@ -471,25 +435,6 @@ public class DriverPayoutWeek implements DriverPayoutInterface, Serializable {
         VerticalLayout driverAdjustmentsContent = UIUtilities.getVerticalLayout();
         driverAdjustmentsContent.add(driverAdjustmentGrid);
         driverWeekAdjustments.add(driverAdjustmentsContent);
-        /*
-        driverAdjustmentGrid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
-            //Button editButton = new Button("Edit");
-            editIcon.addClickListener(e -> {
-                daDialogOpen(item,DriverPayoutView.DialogMode.EDIT);
-            });
-            return editIcon;
-        }).setWidth("150px").setFlexGrow(0);
-        driverAdjustmentGrid.addComponentColumn(item -> {
-            Icon deleteIcon = new Icon("lumo", "cross");
-            deleteIcon.setColor("red");
-            deleteIcon.addClickListener(e -> {
-                daDialogOpen(item,DriverPayoutView.DialogMode.DELETE);
-            });
-            return deleteIcon;
-        }).setWidth("150px").setFlexGrow(0);
-
-         */
         driverAdjustmentGrid.addColumn(DriverAdjustment::getAdjustmentDate).setHeader("Date");
         driverAdjustmentGrid.addColumn(DriverAdjustment::getAdjustmentNote).setHeader("Note");
         driverAdjustmentGrid.addColumn(item -> item.getAdjustmentAmountFmt()).setHeader("Amount").setTextAlign(ColumnTextAlign.END);

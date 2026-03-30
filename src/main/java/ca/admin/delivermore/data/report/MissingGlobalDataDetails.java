@@ -4,6 +4,7 @@ import ca.admin.delivermore.collector.data.entity.TaskEntity;
 import ca.admin.delivermore.collector.data.service.TaskDetailRepository;
 import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.details.DetailsVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -15,6 +16,8 @@ import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 public class MissingGlobalDataDetails {
     private TaskEditDialog taskEditDialog;
@@ -47,7 +50,7 @@ public class MissingGlobalDataDetails {
             missingGlobalDataGrid.addThemeVariants(GridVariant.LUMO_COMPACT);
             missingGlobalDataGrid.setItems(missingGlobalDataList);
             missingGlobalDataGrid.addComponentColumn(item -> {
-                Icon editIcon = new Icon("lumo", "edit");
+                Icon editIcon = LumoIcon.EDIT.create();
                 //Button editButton = new Button("Edit");
                 editIcon.addClickListener(e -> {
                     taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);

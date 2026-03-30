@@ -6,6 +6,7 @@ import ca.admin.delivermore.data.report.*;
 import ca.admin.delivermore.data.service.intuit.controller.QBOResult;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.componentfactory.DateRange;
 import com.vaadin.componentfactory.EnhancedDateRangePicker;
 import com.vaadin.flow.component.Component;
@@ -17,6 +18,7 @@ import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Main;
 import com.vaadin.flow.component.html.NativeLabel;
 import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -27,11 +29,13 @@ import com.vaadin.flow.data.renderer.LocalDateTimeRenderer;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.StreamResource;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vaadin.olli.FileDownloadWrapper;
 
 import jakarta.annotation.security.RolesAllowed;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -40,6 +44,8 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 @PageTitle("Period Summary")
 @Route(value = "periodsummary", layout = MainLayout.class)
@@ -297,7 +303,7 @@ public class PeriodSummaryView extends Main implements TaskListRefreshNeededList
         grid.addThemeVariants(GridVariant.LUMO_COMPACT);
         grid.setColumnReorderingAllowed(true);
         grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("vaadin", "file-text");
+            Icon editIcon = VaadinIcon.FILE_TEXT.create();
             editIcon.setColor(UIUtilities.iconColorNormal);
             editIcon.setTooltipText("Vendor Report (pdf)");
             editIcon.setSize("16px");
@@ -371,7 +377,7 @@ public class PeriodSummaryView extends Main implements TaskListRefreshNeededList
                 div.add(details);
             }
             details.addComponentColumn(detailItem -> {
-                Icon editIcon = new Icon("lumo", "edit");
+                Icon editIcon = LumoIcon.EDIT.create();
                 editIcon.setTooltipText("Edit/View Task");
                 editIcon.addClickListener(e -> {
                     taskEditDialog.setDialogMode(TaskEditDialog.DialogMode.EDIT);

@@ -7,6 +7,7 @@ import ca.admin.delivermore.data.entity.RestAdjustment;
 import ca.admin.delivermore.data.service.Registry;
 import ca.admin.delivermore.data.service.RestAdjustmentRepository;
 import ca.admin.delivermore.views.UIUtilities;
+
 import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.ShortcutRegistration;
 import com.vaadin.flow.component.Shortcuts;
@@ -16,16 +17,20 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextField;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
+
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 public class RestPayoutAdjustmentDialog {
     enum DialogMode{
@@ -42,7 +47,7 @@ public class RestPayoutAdjustmentDialog {
     private TextField dialogAdjustmentNote = new TextField("Adjustment note");
     private Button dialogOkButton = new Button("OK");
     private Button dialogCancelButton = new Button("Cancel");
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
     private LocalDate payoutDate;
     private RestaurantRepository restaurantRepository;
     private RestAdjustment selectedRestAdjustment;
@@ -251,7 +256,7 @@ public class RestPayoutAdjustmentDialog {
         });
 
         dialogAdjustmentAmount.setWidthFull();
-        dialogAdjustmentAmount.setButtonIcon(new Icon("vaadin", "plus-minus"));
+        dialogAdjustmentAmount.setButtonIcon(VaadinIcon.PLUS_MINUS.create());
         dialogAdjustmentAmount.addClickListener(e -> {
             dialogAdjustmentAmount.setValue(dialogAdjustmentAmount.getValue()*-1);
         });

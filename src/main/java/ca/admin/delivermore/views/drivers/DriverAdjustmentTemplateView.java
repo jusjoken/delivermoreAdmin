@@ -23,6 +23,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 import ca.admin.delivermore.data.entity.DriverAdjustmentTemplate;
 import ca.admin.delivermore.data.scheduler.SchedulerEventDialog;
@@ -48,12 +49,12 @@ public class DriverAdjustmentTemplateView extends VerticalLayout {
     private DialogMode dialogMode = DialogMode.EDIT;
 
     private Button dialogOkButton = new Button("OK");
-    private Icon okIcon = new Icon("lumo", "checkmark");
-    private Icon resetIcon = new Icon("lumo", "undo");
+    private Icon okIcon = LumoIcon.CHECKMARK.create();
+    private Icon resetIcon = LumoIcon.UNDO.create();
 
     private Button dialogResetButton = new Button("Reset");
     private Button dialogCancelButton = new Button("Cancel");
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
 
     private TextField dialogTemplateName = new TextField("Template Name");
     private NumberField dialogTemplateAmount = UIUtilities.getNumberField("Amount", false, "$");
@@ -86,7 +87,7 @@ public class DriverAdjustmentTemplateView extends VerticalLayout {
         refreshButton.addClickListener(e -> {
             refreshGrid();
         });
-        Icon addNewIcon = new Icon("lumo", "plus");
+        Icon addNewIcon = LumoIcon.PLUS.create();
         addNewIcon.setColor("green");
         Button addNew = new Button("Add", addNewIcon);
         addNew.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -113,7 +114,7 @@ public class DriverAdjustmentTemplateView extends VerticalLayout {
 
         GridExporter<DriverAdjustmentTemplate> exporter = GridExporter.createFor(grid);
         Grid.Column editIconColumn = grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             editIcon.setTooltipText("Edit gift card");
             //Button editButton = new Button("Edit");
             editIcon.addClickListener(e -> {
@@ -125,7 +126,7 @@ public class DriverAdjustmentTemplateView extends VerticalLayout {
         exporter.setExportColumn(editIconColumn,false);
 
         Grid.Column deleteIconColumn = grid.addComponentColumn(item -> {
-            Icon deleteIcon = new Icon("lumo", "cross");
+            Icon deleteIcon = LumoIcon.CROSS.create();
             deleteIcon.setTooltipText("Delete gift card");
             deleteIcon.setColor("red");
             deleteIcon.addClickListener(e -> {

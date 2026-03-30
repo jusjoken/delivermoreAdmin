@@ -38,6 +38,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.theme.lumo.LumoIcon;
 
 import ca.admin.delivermore.collector.data.entity.Restaurant;
 import ca.admin.delivermore.collector.data.service.RestaurantRepository;
@@ -62,17 +63,17 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private DialogMode dialogMode = DialogMode.EDIT;
 
     private Button dialogOkButton = new Button("OK");
-    private Icon okIcon = new Icon("lumo", "checkmark");
-    private Icon resetIcon = new Icon("lumo", "undo");
+    private Icon okIcon = LumoIcon.CHECKMARK.create();
+    private Icon resetIcon = LumoIcon.UNDO.create();
     private TabSheet dialogTabSheet = new TabSheet();
     private Tab dialogTabEmail = new Tab();
     private Tab dialogTabOther = new Tab();
-    private Icon tabEmailIcon = new Icon("vaadin", "exclamation-circle-o");
-    private Icon tabOtherIcon = new Icon("vaadin", "exclamation-circle-o");
+    private Icon tabEmailIcon = VaadinIcon.EXCLAMATION_CIRCLE_O.create();
+    private Icon tabOtherIcon = VaadinIcon.EXCLAMATION_CIRCLE_O.create();
 
     private Button dialogResetButton = new Button("Reset");
     private Button dialogCancelButton = new Button("Cancel");
-    private Button dialogCloseButton = new Button(new Icon("lumo", "cross"));
+    private Button dialogCloseButton = new Button(LumoIcon.CROSS.create());
     private TextField dialogRestName = new TextField("Restaurant");
     private DatePicker dialogRestEffectiveDate = new DatePicker("Effective Date");
     private TextField dialogRestExpiryDate = new TextField("Expiry Date");
@@ -129,7 +130,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
         grid.removeAllColumns();
         grid.addComponentColumn(item -> {
-            Icon editIcon = new Icon("lumo", "edit");
+            Icon editIcon = LumoIcon.EDIT.create();
             //Button editButton = new Button("Edit");
             editIcon.addClickListener(e -> {
                 if(item.getDateExpired()==null){
@@ -142,7 +143,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }).setWidth("50px").setFlexGrow(0).setFrozen(true);
 
         grid.addComponentColumn(item -> {
-            Icon detailsDeleteIcon = new Icon("lumo", "cross");
+            Icon detailsDeleteIcon = LumoIcon.CROSS.create();
             detailsDeleteIcon.setTooltipText("Delete restaurant entry");
             detailsDeleteIcon.setColor("red");
             detailsDeleteIcon.addClickListener(e -> {
@@ -326,7 +327,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         newRestDialog.setHeaderTitle("Add new Restaurant");
         newRestDialog.setCloseOnEsc(true);
 
-        Button newRestDialogCloseButton = new Button(new Icon("lumo", "cross"));;
+        Button newRestDialogCloseButton = new Button(LumoIcon.CROSS.create());
         newRestDialogCloseButton.addClickListener((e) -> newRestDialog.close());
         newRestDialogCloseButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
         newRestDialog.getHeader().add(newRestDialogCloseButton);
