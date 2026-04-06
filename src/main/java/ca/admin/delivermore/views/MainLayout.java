@@ -51,6 +51,7 @@ import ca.admin.delivermore.views.tasks.TasksByCustomerView;
 import ca.admin.delivermore.views.tasks.TasksByDayAndWeekView;
 import ca.admin.delivermore.views.tasks.TasksView;
 import ca.admin.delivermore.views.utility.GiftCardView;
+import ca.admin.delivermore.views.utility.LogViewerView;
 import ca.admin.delivermore.views.utility.TeamsView;
 
 /**
@@ -149,7 +150,8 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 || checkAccess(GiftCardView.class)
                 || checkAccess(TabletAssetsView.class)
                 || checkAccess(TabletAssetHistoryView.class)
-                || checkAccess(TasksView.class)) {
+                || checkAccess(TasksView.class)
+                || checkAccess(LogViewerView.class)) {
             SideNavItem utilities = new SideNavItem("Utilities");
             utilities.setPrefixComponent(VaadinIcon.FOLDER_OPEN.create());
             nav.addItem(utilities);
@@ -202,6 +204,10 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 SideNavItem tasksMenu = new SideNavItem("Tasks(under dev)", TasksView.class, VaadinIcon.LIST.create());
                 //SideNavItem tasksMenu = new SideNavItem("Tasks(under dev)", TasksView.class, "la la-stack-overflow");
                 utilities.addItem(tasksMenu);
+            }
+            if (checkAccess(LogViewerView.class)) {
+                SideNavItem logsMenu = new SideNavItem("Log Viewer", LogViewerView.class, VaadinIcon.FILE_TEXT.create());
+                utilities.addItem(logsMenu);
             }
         }
 
