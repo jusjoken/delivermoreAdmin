@@ -59,6 +59,7 @@ public class LogViewerView extends VerticalLayout {
     private final Anchor downloadLink = new Anchor();
 
     private final Span status = new Span("Ready");
+    private final Span sourcePathInfo = new Span();
     private final Pre logPre = new Pre();
     private final Div viewerContainer = new Div();
 
@@ -141,8 +142,19 @@ public class LogViewerView extends VerticalLayout {
     private HorizontalLayout createFooter() {
         status.getStyle().set("font-size", "var(--lumo-font-size-s)");
         status.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        sourcePathInfo.getStyle().set("font-size", "var(--lumo-font-size-xs)");
+        sourcePathInfo.getStyle().set("color", "var(--lumo-tertiary-text-color)");
+        sourcePathInfo.getStyle().set("white-space", "nowrap");
+        sourcePathInfo.getStyle().set("overflow", "hidden");
+        sourcePathInfo.getStyle().set("text-overflow", "ellipsis");
+        sourcePathInfo.setText("source paths: n/a");
 
-        HorizontalLayout footer = new HorizontalLayout(status);
+        VerticalLayout footerContent = new VerticalLayout(status, sourcePathInfo);
+        footerContent.setPadding(false);
+        footerContent.setSpacing(false);
+        footerContent.setWidthFull();
+
+        HorizontalLayout footer = new HorizontalLayout(footerContent);
         footer.setWidthFull();
         footer.setPadding(false);
         footer.setSpacing(false);
@@ -177,7 +189,10 @@ public class LogViewerView extends VerticalLayout {
     }
 
     private void configureActions() {
-        sourceSelect.addValueChangeListener(event -> reloadFileList(event.getValue()));
+        sourceSelect.addValueChangeListener(event -> {
+            updateSourcePathInfo(event.getValue());
+            reloadFileList(event.getValue());
+        });
         fileSelect.addValueChangeListener(event -> updateDownloadResource());
 
         loadButton.addClickListener(event -> loadSelectedFile());
@@ -219,6 +234,7 @@ public class LogViewerView extends VerticalLayout {
         if (sourceKey == null) {
             fileSelect.clear();
             fileSelect.setItems(List.of());
+            sourcePathInfo.setText("source paths: n/a");
             return;
         }
 
@@ -231,6 +247,20 @@ public class LogViewerView extends VerticalLayout {
         } catch (Exception ex) {
             updateStatus("Failed to list files: " + ex.getMessage());
             Notification.show("Unable to load log files", 4000, Notification.Position.BOTTOM_START);
+        }
+    }
+
+    private void updateSourcePathInfo(String sourceKey) {
+        if (sourceKey == null || sourceKey.isBlank()) {
+            sourcePathInfo.setText("source paths: n/a");
+            return;
+        }
+
+        try {
+            LogViewerService.SourcePaths paths = logViewerService.sourcePaths(sourceKey);
+            sourcePathInfo.setText("current: " + paths.currentFile() + " | archive: " + paths.archiveDir());
+        } catch (Exception ex) {
+            sourcePathInfo.setText("source paths unavailable: " + ex.getMessage());
         }
     }
 

@@ -30,10 +30,10 @@ public class LogViewerService {
     @Value("${logviewer.sources.admin.archive-dir:./logs/archived}")
     private String adminArchiveDir;
 
-    @Value("${logviewer.sources.collector.current-file:../dm_collector/logs/dm_collector.log}")
+    @Value("${logviewer.sources.collector.current-file:./logs/dm_collector.log}")
     private String collectorCurrentFile;
 
-    @Value("${logviewer.sources.collector.archive-dir:../dm_collector/logs/archived}")
+    @Value("${logviewer.sources.collector.archive-dir:./logs/archived}")
     private String collectorArchiveDir;
 
     public Map<String, String> getSourceOptions() {
@@ -43,9 +43,14 @@ public class LogViewerService {
         return sources;
     }
 
+    public SourcePaths sourcePaths(String sourceKey) {
+        return new SourcePaths(currentFilePath(sourceKey), archiveDirPath(sourceKey));
+    }
+
     public List<LogFileItem> listFiles(String sourceKey) {
         Path current = currentFilePath(sourceKey);
         Path archiveDir = archiveDirPath(sourceKey);
+        String sourcePrefix = sourcePrefixFromCurrent(current);
 
         List<LogFileItem> items = new ArrayList<>();
         items.add(new LogFileItem(
@@ -58,7 +63,7 @@ public class LogViewerService {
         if (Files.isDirectory(archiveDir)) {
             try (Stream<Path> stream = Files.list(archiveDir)) {
                 stream.filter(Files::isRegularFile)
-                        .filter(path -> path.getFileName().toString().endsWith(".log"))
+                        .filter(path -> isArchiveCandidate(path, current, sourcePrefix))
                         .sorted(Comparator.comparing(this::lastModified).reversed())
                         .forEach(path -> items.add(new LogFileItem(
                                 path.getFileName().toString(),
@@ -72,6 +77,23 @@ public class LogViewerService {
         }
 
         return items;
+    }
+
+    private boolean isArchiveCandidate(Path path, Path current, String sourcePrefix) {
+        String fileName = path.getFileName().toString();
+        if (!fileName.endsWith(".log")) {
+            return false;
+        }
+        if (fileName.equals(current.getFileName().toString())) {
+            return false;
+        }
+        return sourcePrefix.isBlank() || fileName.startsWith(sourcePrefix);
+    }
+
+    private String sourcePrefixFromCurrent(Path current) {
+        String name = current.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     public String tail(String sourceKey, String fileId, int lines) {
@@ -266,5 +288,8 @@ public class LogViewerService {
     }
 
     public record LogBackChunk(String text, long startOffset, long endOffset) {
+    }
+
+    public record SourcePaths(Path currentFile, Path archiveDir) {
     }
 }
