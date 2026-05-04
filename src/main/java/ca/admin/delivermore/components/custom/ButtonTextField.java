@@ -1,6 +1,5 @@
 package ca.admin.delivermore.components.custom;
 
-import ca.admin.delivermore.views.UIUtilities;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEventListener;
 import com.vaadin.flow.component.button.Button;
@@ -10,11 +9,14 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
 
+import ca.admin.delivermore.views.UIUtilities;
+
 public class ButtonTextField extends CustomField<String> {
 
     private TextField textField = new TextField();
     private Button button = new Button();
     private HorizontalLayout layout = UIUtilities.getHorizontalLayout();
+    private boolean readOnly;
 
     public ButtonTextField() {
         super();
@@ -43,16 +45,21 @@ public class ButtonTextField extends CustomField<String> {
 
     @Override
     public void setReadOnly(boolean readOnly) {
-        ((com.vaadin.flow.component.AbstractField<?, ?>) this).setReadOnly(readOnly);
-        // super.setReadOnly(readOnly);
+        this.readOnly = readOnly;
         layout.removeAll();
         if(readOnly){
             textField.setReadOnly(true);
             layout.add(textField);
         }else{
+            textField.setReadOnly(false);
             layout.setAlignItems(FlexComponent.Alignment.BASELINE);
             layout.add(textField,button);
         }
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return readOnly;
     }
 
     public void setButtonIcon(Component icon) {
