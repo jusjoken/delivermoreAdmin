@@ -94,6 +94,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private Checkbox dialogRestProcessOrderText = new Checkbox();
 
     private TextField dialogRestGlobalAuthCode = UIUtilities.getTextField("Global Code");
+    private TextField dialogRestFetchMenuKey = UIUtilities.getTextField("Fetch Menu Key");
     private IntegerField dialogRestFormId = UIUtilities.getIntegerField("Form Id",false,0);
 
     private Select<Team> dialogRestLocation = new Select<>();
@@ -186,6 +187,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getUseInvoiceProcessing())).setWidth(statusWidth).setComparator(Restaurant::getUseInvoiceProcessing).setHeader("Invoiced Vendor");
         grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getProcessOrderText())).setWidth(statusWidth).setComparator(Restaurant::getProcessOrderText).setHeader("Add order details");
         grid.addColumn(Restaurant::getGlobalAuthCode).setHeader("Global Code");
+        grid.addColumn(Restaurant::getFetchMenuKey).setHeader("Fetch Menu Key");
         grid.addColumn(Restaurant::getFormId).setHeader("Form Id");
 
         grid.setColumnReorderingAllowed(true);
@@ -631,6 +633,14 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestGlobalAuthCode.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
+
+        dialogRestFetchMenuKey.setReadOnly(false);
+        dialogRestFetchMenuKey.addThemeVariants(TextFieldVariant.LUMO_SMALL);
+        dialogRestFetchMenuKey.setWidth(halfFieldWidth);
+        dialogRestFetchMenuKey.addValueChangeListener(e -> {
+            if(validationEnabled) dialogValidate();
+        });
+
         dialogRestFormId.setReadOnly(false);
         dialogRestFormId.addThemeVariants(TextFieldVariant.LUMO_SMALL);
         dialogRestFormId.setWidth(halfFieldWidth);
@@ -638,7 +648,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             if(validationEnabled) dialogValidate();
         });
         HorizontalLayout fieldsLayout6 = UIUtilities.getHorizontalLayout(false,true,false);
-        fieldsLayout6.add(dialogRestGlobalAuthCode,dialogRestFormId);
+        fieldsLayout6.add(dialogRestGlobalAuthCode,dialogRestFetchMenuKey,dialogRestFormId);
 
         VerticalLayout otherFieldsLayout = UIUtilities.getVerticalLayout();
         otherFieldsLayout.add(locationFieldsLayout,commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout6);
@@ -736,6 +746,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             dialogRestGlobalAuthCode.setValue(selectedRestaurant.getGlobalAuthCode());
         }
+        if(selectedRestaurant.getFetchMenuKey()==null || selectedRestaurant.getFetchMenuKey().isEmpty()){
+            dialogRestFetchMenuKey.setValue("");
+        }else{
+            dialogRestFetchMenuKey.setValue(selectedRestaurant.getFetchMenuKey());
+        }
         if(selectedRestaurant.getFormId()==null){
             dialogRestFormId.setValue(0);
         }else{
@@ -773,6 +788,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateCheckbox(dialogRestInvoicedVendor,selectedRestaurant.getUseInvoiceProcessing());
                 validateCheckbox(dialogRestProcessOrderText,selectedRestaurant.getProcessOrderText());
                 validateTextField(dialogRestGlobalAuthCode, selectedRestaurant.getGlobalAuthCode());
+                validateTextField(dialogRestFetchMenuKey, selectedRestaurant.getFetchMenuKey());
                 validateIntegerField(dialogRestFormId, Math.toIntExact(selectedRestaurant.getFormId()));
 
                 validateEmailField(dialogRestEmailEditor.getList(), dialogRestEmailEditor.getValue(), selectedRestaurant.getEmail());
@@ -931,6 +947,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             selectedRestaurant.setGlobalAuthCode("");
         }else{
             selectedRestaurant.setGlobalAuthCode(dialogRestGlobalAuthCode.getValue());
+        }
+        if(dialogRestFetchMenuKey.getValue()==null){
+            selectedRestaurant.setFetchMenuKey("");
+        }else{
+            selectedRestaurant.setFetchMenuKey(dialogRestFetchMenuKey.getValue());
         }
         if(dialogRestFormId.getValue()==null){
             selectedRestaurant.setFormId(0L);

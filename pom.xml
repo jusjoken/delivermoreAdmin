@@ -15,7 +15,7 @@
         <selenium.version>4.23.0</selenium.version>
         <jackson.version>2.21.1</jackson.version>
         <version.major>1</version.major>
-        <version.minor>6</version.minor>
+        <version.minor>7</version.minor>
     </properties>
 
     <parent>
