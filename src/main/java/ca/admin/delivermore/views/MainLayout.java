@@ -46,19 +46,20 @@ import ca.admin.delivermore.views.report.PeriodSummaryView;
 import ca.admin.delivermore.views.restaurants.RestInvoiceView;
 import ca.admin.delivermore.views.restaurants.RestPayoutView;
 import ca.admin.delivermore.views.restaurants.RestView;
-import ca.admin.delivermore.views.tasks.TaskListView;
-import ca.admin.delivermore.views.tasks.TasksByCustomerView;
-import ca.admin.delivermore.views.tasks.TasksByDayAndWeekView;
-import ca.admin.delivermore.views.tasks.TasksView;
-import ca.admin.delivermore.views.utility.GiftCardView;
-import ca.admin.delivermore.views.utility.LogViewerView;
-import ca.admin.delivermore.views.utility.TeamsView;
 
 /**
  * The main view is a top-level placeholder for other views.
  */
 @AnonymousAllowed
 public class MainLayout extends AppLayout implements AfterNavigationObserver {
+
+    private static final String TEAMS_VIEW_CLASS = "ca.admin.delivermore.views.utility.TeamsView";
+    private static final String TASK_LIST_VIEW_CLASS = "ca.admin.delivermore.views.tasks.TaskListView";
+    private static final String GIFT_CARD_VIEW_CLASS = "ca.admin.delivermore.views.utility.GiftCardView";
+    private static final String TASKS_VIEW_CLASS = "ca.admin.delivermore.views.tasks.TasksView";
+    private static final String LOG_VIEWER_VIEW_CLASS = "ca.admin.delivermore.views.utility.LogViewerView";
+    private static final String TASKS_BY_CUSTOMER_VIEW_CLASS = "ca.admin.delivermore.views.tasks.TasksByCustomerView";
+    private static final String TASKS_BY_DAY_AND_WEEK_VIEW_CLASS = "ca.admin.delivermore.views.tasks.TasksByDayAndWeekView";
 
     private final boolean securityEnabled;
 
@@ -143,15 +144,15 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
         //only add the menu folder if the user has access to at least one of the sub views
         if (checkAccess(DriversView.class)
                 || checkAccess(RestView.class)
-                || checkAccess(TeamsView.class)
-                || checkAccess(TaskListView.class)
+            || checkAccess(TEAMS_VIEW_CLASS)
+            || checkAccess(TASK_LIST_VIEW_CLASS)
                 || checkAccess(QBOConnectView.class)
                 || checkAccess(DriverAdjustmentTemplateView.class)
-                || checkAccess(GiftCardView.class)
+            || checkAccess(GIFT_CARD_VIEW_CLASS)
                 || checkAccess(TabletAssetsView.class)
                 || checkAccess(TabletAssetHistoryView.class)
-                || checkAccess(TasksView.class)
-                || checkAccess(LogViewerView.class)) {
+            || checkAccess(TASKS_VIEW_CLASS)
+            || checkAccess(LOG_VIEWER_VIEW_CLASS)) {
             SideNavItem utilities = new SideNavItem("Utilities");
             utilities.setPrefixComponent(VaadinIcon.FOLDER_OPEN.create());
             nav.addItem(utilities);
@@ -165,8 +166,8 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 //SideNavItem driverAdjustMenu = new SideNavItem("Driver Adj Templates", DriverAdjustmentTemplateView.class, "la la-car-side");
                 utilities.addItem(driverAdjustMenu);
             }
-            if (checkAccess(TeamsView.class)) {
-                SideNavItem teamsMenu = new SideNavItem("Locations", TeamsView.class, VaadinIcon.MAP_MARKER.create());
+            if (checkAccess(TEAMS_VIEW_CLASS)) {
+                SideNavItem teamsMenu = new SideNavItem("Locations", "locations", VaadinIcon.MAP_MARKER.create());
                 //SideNavItem teamsMenu = new SideNavItem("Locations", TeamsView.class, "la la-map-marked-alt");
                 utilities.addItem(teamsMenu);
             }
@@ -175,13 +176,13 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 //SideNavItem restMenu = new SideNavItem("Restaurants", RestView.class, "la la-store-alt");
                 utilities.addItem(restMenu);
             }
-            if (checkAccess(TaskListView.class)) {
-                SideNavItem taskListMenu = new SideNavItem("Task List", TaskListView.class, VaadinIcon.LIST.create());
+            if (checkAccess(TASK_LIST_VIEW_CLASS)) {
+                SideNavItem taskListMenu = new SideNavItem("Task List", "tasklist", VaadinIcon.LIST.create());
                 //SideNavItem taskListMenu = new SideNavItem("Task List", TaskListView.class, "la la-stack-overflow");
                 utilities.addItem(taskListMenu);
             }
-            if (checkAccess(GiftCardView.class)) {
-                SideNavItem giftCardListMenu = new SideNavItem("Gift Card List", GiftCardView.class, VaadinIcon.CREDIT_CARD.create());
+            if (checkAccess(GIFT_CARD_VIEW_CLASS)) {
+                SideNavItem giftCardListMenu = new SideNavItem("Gift Card List", "giftcards", VaadinIcon.CREDIT_CARD.create());
                 //SideNavItem giftCardListMenu = new SideNavItem("Gift Card List", GiftCardView.class, "la la-credit-card");
                 utilities.addItem(giftCardListMenu);
             }
@@ -200,32 +201,32 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                     utilities.addItem(qboConnectMenu);
                 }
             }
-            if (checkAccess(TasksView.class)) {
-                SideNavItem tasksMenu = new SideNavItem("Tasks(under dev)", TasksView.class, VaadinIcon.LIST.create());
+            if (checkAccess(TASKS_VIEW_CLASS)) {
+                SideNavItem tasksMenu = new SideNavItem("Tasks(under dev)", "tasks", VaadinIcon.LIST.create());
                 //SideNavItem tasksMenu = new SideNavItem("Tasks(under dev)", TasksView.class, "la la-stack-overflow");
                 utilities.addItem(tasksMenu);
             }
-            if (checkAccess(LogViewerView.class)) {
-                SideNavItem logsMenu = new SideNavItem("Log Viewer", LogViewerView.class, VaadinIcon.FILE_TEXT.create());
+            if (checkAccess(LOG_VIEWER_VIEW_CLASS)) {
+                SideNavItem logsMenu = new SideNavItem("Log Viewer", "logviewer", VaadinIcon.FILE_TEXT.create());
                 utilities.addItem(logsMenu);
             }
         }
 
         //only add the menu folder if the user has access to at least one of the sub views
-        if (checkAccess(TasksByCustomerView.class)
-                || checkAccess(TasksByDayAndWeekView.class)
+        if (checkAccess(TASKS_BY_CUSTOMER_VIEW_CLASS)
+                || checkAccess(TASKS_BY_DAY_AND_WEEK_VIEW_CLASS)
                 || checkAccess(PeriodSummaryView.class)
                 || checkAccess(DriverReportView.class)) {
             SideNavItem reports = new SideNavItem("Reports");
             reports.setPrefixComponent(VaadinIcon.FOLDER_OPEN.create());
             nav.addItem(reports);
-            if (checkAccess(TasksByCustomerView.class)) {
-                SideNavItem customerTasksMenu = new SideNavItem("Tasks by Customer", TasksByCustomerView.class, VaadinIcon.USER.create());
+            if (checkAccess(TASKS_BY_CUSTOMER_VIEW_CLASS)) {
+                SideNavItem customerTasksMenu = new SideNavItem("Tasks by Customer", "customertasks", VaadinIcon.USER.create());
                 //SideNavItem customerTasksMenu = new SideNavItem("Tasks by Customer", TasksByCustomerView.class, "la la-user");
                 reports.addItem(customerTasksMenu);
             }
-            if (checkAccess(TasksByDayAndWeekView.class)) {
-                SideNavItem tasksByDayAndWeekMenu = new SideNavItem("Tasks Report", TasksByDayAndWeekView.class, VaadinIcon.CALENDAR.create());
+            if (checkAccess(TASKS_BY_DAY_AND_WEEK_VIEW_CLASS)) {
+                SideNavItem tasksByDayAndWeekMenu = new SideNavItem("Tasks Report", "tasksbydayandweek", VaadinIcon.CALENDAR.create());
                 reports.addItem(tasksByDayAndWeekMenu);
             }
             if (checkAccess(PeriodSummaryView.class)) {
@@ -269,6 +270,15 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             return accessChecker.hasAccess(cls);
         }else{
             return true;
+        }
+    }
+
+    private Boolean checkAccess(String className){
+        try {
+            Class<?> cls = Class.forName(className);
+            return checkAccess(cls);
+        } catch (ClassNotFoundException ex) {
+            return false;
         }
     }
 

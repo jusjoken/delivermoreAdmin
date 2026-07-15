@@ -57,9 +57,7 @@
     "typescript": "5.9.3",
     "vite": "7.3.1",
     "vite-plugin-checker": "0.12.0",
-    "workbox-build": "7.4.0",
-    "workbox-core": "7.1.0",
-    "workbox-precaching": "7.1.0"
+    "workbox-build": "7.4.0"
   },
   "overrides": {
     "@vaadin/vaadin-development-mode-detector": "$@vaadin/vaadin-development-mode-detector",
@@ -79,7 +77,6 @@
     "moment": "$moment",
     "@fullcalendar/daygrid": "$@fullcalendar/daygrid",
     "@vaadin-component-factory/vcf-date-range-picker": "$@vaadin-component-factory/vcf-date-range-picker",
-    "tippy.js": "$tippy.js",
     "@fullcalendar/resource-timeline": "$@fullcalendar/resource-timeline",
     "proj4": "$proj4",
     "@fullcalendar/core": "$@fullcalendar/core",
@@ -91,7 +88,6 @@
     "@fullcalendar/moment-timezone": "$@fullcalendar/moment-timezone",
     "@vaadin/vaadin-themable-mixin": "$@vaadin/vaadin-themable-mixin",
     "@vaadin/vaadin-lumo-styles": "$@vaadin/vaadin-lumo-styles",
-    "line-awesome": "$line-awesome",
     "react-router": "$react-router",
     "@vaadin/aura": "$@vaadin/aura",
     "ol": "$ol",
@@ -164,7 +160,9 @@
     "@fullcalendar/icalendar": "$@fullcalendar/icalendar",
     "@fullcalendar/rrule": "$@fullcalendar/rrule",
     "ical.js": "$ical.js",
-    "@fullcalendar/google-calendar": "$@fullcalendar/google-calendar"
+    "@fullcalendar/google-calendar": "$@fullcalendar/google-calendar",
+    "tippy.js": "$tippy.js",
+    "line-awesome": "$line-awesome"
   },
   "type": "module",
   "vaadin": {
@@ -224,10 +222,8 @@
       "typescript": "5.9.3",
       "vite": "7.3.1",
       "vite-plugin-checker": "0.12.0",
-      "workbox-build": "7.4.0",
-      "workbox-core": "7.1.0",
-      "workbox-precaching": "7.1.0"
+      "workbox-build": "7.4.0"
     },
-    "hash": "127106a28482e98623551e67a6e8403d23bc9382b79ab743fe76e023f115f27e"
+    "hash": "c32ad2ab0264cd9d2205fae7bb010889ffea365ca43745e8178c74fe83b67ee3"
   }
 }

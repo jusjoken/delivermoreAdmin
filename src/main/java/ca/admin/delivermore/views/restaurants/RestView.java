@@ -10,6 +10,7 @@ import org.springframework.beans.BeanUtils;
 
 import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.Key;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -46,6 +47,7 @@ import ca.admin.delivermore.collector.data.tookan.Team;
 import ca.admin.delivermore.components.custom.ListEditor;
 import ca.admin.delivermore.components.custom.LocationChoice;
 import ca.admin.delivermore.components.custom.LocationChoiceChangedListener;
+import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
 import jakarta.annotation.security.RolesAllowed;
@@ -120,11 +122,13 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private LocationChoice locationChoice = new LocationChoice(true);
 
     RestaurantRepository restaurantRepository;
+    private final RestaurantMenuEditorService restaurantMenuEditorService;
 
     private Logger log = LoggerFactory.getLogger(RestView.class);
 
-    public RestView(RestaurantRepository restaurantRepository) {
+    public RestView(RestaurantRepository restaurantRepository, RestaurantMenuEditorService restaurantMenuEditorService) {
         this.restaurantRepository = restaurantRepository;
+        this.restaurantMenuEditorService = restaurantMenuEditorService;
         log.info("Configuring the dialog");
         dialogConfigure();
         configureNewRestDialog();
@@ -189,6 +193,19 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.addColumn(Restaurant::getGlobalAuthCode).setHeader("Global Code");
         grid.addColumn(Restaurant::getFetchMenuKey).setHeader("Fetch Menu Key");
         grid.addColumn(Restaurant::getFormId).setHeader("Form Id");
+        grid.addComponentColumn(restaurant -> {
+            Button menuEditorButton = new Button("Menu");
+            menuEditorButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            menuEditorButton.addClickListener(event -> UI.getCurrent().navigate("restaurants/menu-editor?restaurantId=" + restaurant.getRestaurantId()));
+            return menuEditorButton;
+        }).setHeader("Menu Editor");
+
+        grid.addComponentColumn(restaurant -> {
+            Button resetMenuButton = new Button("Reset Pulls");
+            resetMenuButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
+            resetMenuButton.addClickListener(event -> confirmResetMenuPulls(restaurant));
+            return resetMenuButton;
+        }).setHeader("Menu Reset");
 
         grid.setColumnReorderingAllowed(true);
         //grid.getColumns().forEach(col -> col.setAutoWidth(true));
@@ -219,6 +236,21 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             refreshGrid();
         });
         confirmRestDeleteDialog.open();
+    }
+
+    private void confirmResetMenuPulls(Restaurant item) {
+        ConfirmDialog confirmDialog = new ConfirmDialog();
+        confirmDialog.setHeader("Reset menu pulls?");
+        confirmDialog.setCancelable(true);
+        confirmDialog.setCancelText("Cancel");
+        confirmDialog.setConfirmText("Reset");
+        confirmDialog.setConfirmButtonTheme("error primary");
+        confirmDialog.setText("This will discard all draft and published menu versions for '" + item.getName() + "' and allow pulls to resume. Continue?");
+        confirmDialog.addConfirmListener(event -> {
+            int removedCount = restaurantMenuEditorService.resetMenuVersions(item.getRestaurantId());
+            UIUtilities.showNotification("Menu reset for " + item.getName() + ". Removed " + removedCount + " versions.");
+        });
+        confirmDialog.open();
     }
 
     private Icon createCheckIcon(Boolean checked) {
