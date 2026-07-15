@@ -259,14 +259,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                     restaurantMenuEditorService.saveMajorGroupOptions(values);
                     refreshItemSettingsOptionLists();
                 }));
-        dataTables.getSubMenu().addItem("Taxation Categories List", event -> openMasterListDialog(
-                "Edit Taxation Categories List",
-                "One value per line. This list is used in Choices & Addons > More > Taxation Categories.",
-                taxationCategoryOptions,
-                values -> {
-                    restaurantMenuEditorService.saveTaxationCategoryOptions(values);
-                    refreshItemSettingsOptionLists();
-                }));
+        dataTables.getSubMenu().addItem("Taxation Categories List", event -> openTaxationCategoryRatesDialog());
     }
 
     private void refreshItemSettingsOptionLists() {
@@ -318,6 +311,118 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         dialog.add(content);
         dialog.getFooter().add(cancel, save);
         dialog.open();
+    }
+
+    private void openTaxationCategoryRatesDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Edit Taxation Categories + %");
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.LARGE);
+
+        Span helper = new Span("Set a percentage for each taxation category. New rows default to 0%.");
+        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
+
+        VerticalLayout rows = new VerticalLayout();
+        rows.setPadding(false);
+        rows.setSpacing(true);
+        rows.setWidthFull();
+
+        List<TaxationCategoryRateRow> rowModels = new ArrayList<>();
+        List<RestaurantMenuEditorService.TaxationCategoryRate> existing = restaurantMenuEditorService
+                .getTaxationCategoryRates(DEFAULT_TAXATION_CATEGORY_OPTIONS);
+
+        if (existing.isEmpty()) {
+            addTaxationCategoryRateRow(rows, rowModels, null, 0d);
+        } else {
+            for (RestaurantMenuEditorService.TaxationCategoryRate rate : existing) {
+                addTaxationCategoryRateRow(rows, rowModels, rate.name(), rate.percentage());
+            }
+        }
+
+        Button addRow = new Button("Add category", VaadinIcon.PLUS.create(), event ->
+                addTaxationCategoryRateRow(rows, rowModels, null, 0d));
+        addRow.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+
+        content.add(helper, rows, addRow);
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button save = new Button("Save", event -> {
+            List<RestaurantMenuEditorService.TaxationCategoryRate> values = new ArrayList<>();
+            for (TaxationCategoryRateRow row : rowModels) {
+                if (row.removed()) {
+                    continue;
+                }
+                String name = trimToNull(row.nameField().getValue());
+                if (name == null) {
+                    continue;
+                }
+                Double pct = row.rateField().getValue();
+                values.add(new RestaurantMenuEditorService.TaxationCategoryRate(name, pct == null ? 0d : pct));
+            }
+            restaurantMenuEditorService.saveTaxationCategoryRates(values);
+            refreshItemSettingsOptionLists();
+            showSuccess("Taxation categories updated");
+            dialog.close();
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(content);
+        dialog.getFooter().add(cancel, save);
+        dialog.open();
+    }
+
+    private void addTaxationCategoryRateRow(
+            VerticalLayout rows,
+            List<TaxationCategoryRateRow> rowModels,
+            String name,
+            Double percentage) {
+        HorizontalLayout rowLayout = new HorizontalLayout();
+        rowLayout.setWidthFull();
+        rowLayout.setSpacing(true);
+        rowLayout.setAlignItems(FlexComponent.Alignment.END);
+
+        TextField nameField = new TextField("Category");
+        nameField.setWidthFull();
+        nameField.setValue(name == null ? "" : name);
+
+        NumberField percentageField = new NumberField("Tax %");
+        percentageField.setMin(0d);
+        percentageField.setStep(0.01d);
+        percentageField.setWidth("180px");
+        percentageField.setValue(percentage == null ? 0d : percentage);
+
+        Button remove = iconButton(VaadinIcon.MINUS_CIRCLE_O, "Remove taxation category", event -> {
+            rows.remove(rowLayout);
+            for (int index = 0; index < rowModels.size(); index++) {
+                TaxationCategoryRateRow row = rowModels.get(index);
+                if (row.layout() == rowLayout) {
+                    rowModels.set(index, row.markRemoved());
+                    break;
+                }
+            }
+        });
+        remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
+
+        rowLayout.add(nameField, percentageField, remove);
+        rowLayout.expand(nameField);
+        rows.add(rowLayout);
+
+        rowModels.add(new TaxationCategoryRateRow(rowLayout, nameField, percentageField, false));
+    }
+
+    private record TaxationCategoryRateRow(
+            HorizontalLayout layout,
+            TextField nameField,
+            NumberField rateField,
+            boolean removed) {
+
+        private TaxationCategoryRateRow markRemoved() {
+            return new TaxationCategoryRateRow(layout, nameField, rateField, true);
+        }
     }
 
     private List<String> parseMultiLineList(String input) {
@@ -1549,6 +1654,31 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         Checkbox allowMultipleSameChoice = new Checkbox("Allow adding same choice multiple times");
         allowMultipleSameChoice.setValue(Boolean.TRUE.equals(group.getAllowQuantity()));
 
+        ComboBox<String> majorGroupField = new ComboBox<>("Major group");
+        majorGroupField.setWidthFull();
+        majorGroupField.setItems(majorGroupOptions);
+        majorGroupField.setClearButtonVisible(true);
+        String selectedMajorGroup = trimToNull(restaurantMenuEditorService.getOptionGroupMajorGroup(group.getId()));
+        if (selectedMajorGroup != null && !majorGroupOptions.contains(selectedMajorGroup)) {
+            majorGroupField.setItems(Stream.concat(majorGroupOptions.stream(), Stream.of(selectedMajorGroup)).toList());
+        }
+        if (selectedMajorGroup != null) {
+            majorGroupField.setValue(selectedMajorGroup);
+        }
+
+        ComboBox<String> taxationCategoryField = new ComboBox<>("Taxation category");
+        taxationCategoryField.setWidthFull();
+        taxationCategoryField.setItems(taxationCategoryOptions);
+        taxationCategoryField.setClearButtonVisible(true);
+        taxationCategoryField.setHelperText("You can add other tax rates under Payments & Taxes -> Taxation");
+        String selectedTaxationCategory = trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
+        if (selectedTaxationCategory != null && !taxationCategoryOptions.contains(selectedTaxationCategory)) {
+            taxationCategoryField.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(selectedTaxationCategory)).toList());
+        }
+        if (selectedTaxationCategory != null) {
+            taxationCategoryField.setValue(selectedTaxationCategory);
+        }
+
         Runnable updateMandatoryFields = () -> {
             boolean mandatory = mandatoryField.getValue();
             forceMinField.setVisible(mandatory);
@@ -1570,7 +1700,14 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         updateMandatoryFields.run();
         updateAllowQuantityField.run();
 
-        content.add(nameField, mandatoryField, forceMinField, forceMaxField, allowMultipleSameChoice);
+        content.add(
+            nameField,
+            mandatoryField,
+            forceMinField,
+            forceMaxField,
+            allowMultipleSameChoice,
+            majorGroupField,
+            taxationCategoryField);
 
         Button cancel = new Button("Cancel", event -> dialog.close());
         Button save = new Button("Save", event -> {
@@ -1596,6 +1733,8 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 boolean allowQuantity = allowMultipleSameChoice.isVisible() && allowMultipleSameChoice.getValue();
                 group.setAllowQuantity(allowQuantity);
                 restaurantMenuEditorService.saveOptionGroup(group);
+                restaurantMenuEditorService.saveOptionGroupMajorGroup(group.getId(), majorGroupField.getValue());
+                restaurantMenuEditorService.saveOptionGroupTaxationCategory(group.getId(), taxationCategoryField.getValue());
 
                 dialog.close();
                 showSuccess("Choice group updated");

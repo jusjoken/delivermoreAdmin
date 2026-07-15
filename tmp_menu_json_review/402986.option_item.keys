@@ -1,0 +1,12 @@
+default
+extras
+id
+is_out_of_stock
+name
+option_group_id
+out_of_stock
+out_of_stock_next_day
+out_of_stock_until
+price
+restaurant_menu_availabilities
+sort

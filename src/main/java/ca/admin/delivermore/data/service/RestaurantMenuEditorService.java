@@ -69,6 +69,9 @@ public class RestaurantMenuEditorService {
             Map<String, String> nutritionalValues) {
     }
 
+        public record TaxationCategoryRate(String name, Double percentage) {
+        }
+
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String MENU_EDITOR_SETTINGS_SECTION = "menu_editor";
     private static final String ITEM_TAG_OPTIONS_SETTING = "item_tag_options";
@@ -140,7 +143,42 @@ public class RestaurantMenuEditorService {
     }
 
     public List<String> getTaxationCategoryOptions(List<String> defaults) {
-        return getListSetting(TAXATION_CATEGORY_OPTIONS_SETTING, defaults);
+        return getTaxationCategoryRates(defaults).stream()
+                .map(TaxationCategoryRate::name)
+                .toList();
+    }
+
+    public List<TaxationCategoryRate> getTaxationCategoryRates(List<String> defaults) {
+        SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, TAXATION_CATEGORY_OPTIONS_SETTING);
+        if (setting == null || setting.getValueAsList().isEmpty()) {
+            return defaults.stream()
+                    .map(value -> new TaxationCategoryRate(value, 0d))
+                    .toList();
+        }
+
+        LinkedHashMap<String, Double> byName = new LinkedHashMap<>();
+        for (String raw : setting.getValueAsList()) {
+            TaxationCategoryRate parsed = parseTaxationCategoryRate(raw);
+            if (parsed == null || parsed.name() == null) {
+                continue;
+            }
+            Double pct = parsed.percentage();
+            if (pct == null) {
+                byName.putIfAbsent(parsed.name(), 0d);
+            } else {
+                byName.putIfAbsent(parsed.name(), pct);
+            }
+        }
+
+        if (byName.isEmpty()) {
+            return defaults.stream()
+                    .map(value -> new TaxationCategoryRate(value, 0d))
+                    .toList();
+        }
+
+        return byName.entrySet().stream()
+                .map(entry -> new TaxationCategoryRate(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public String getOptionGroupMajorGroup(Long optionGroupId) {
@@ -193,10 +231,67 @@ public class RestaurantMenuEditorService {
 
     @org.springframework.transaction.annotation.Transactional
     public void saveTaxationCategoryOptions(List<String> values) {
+        List<TaxationCategoryRate> mapped = values == null
+                ? List.of()
+                : values.stream()
+                        .map(value -> new TaxationCategoryRate(value, 0d))
+                        .toList();
+        saveTaxationCategoryRates(mapped);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveTaxationCategoryRates(List<TaxationCategoryRate> values) {
+        List<String> encoded = new ArrayList<>();
+        if (values != null) {
+            LinkedHashMap<String, Double> deduped = new LinkedHashMap<>();
+            for (TaxationCategoryRate value : values) {
+                if (value == null) {
+                    continue;
+                }
+                String name = trimToNull(value.name());
+                if (name == null) {
+                    continue;
+                }
+                Double pct = value.percentage();
+                double normalizedPct = pct == null ? 0d : pct;
+                deduped.putIfAbsent(name, normalizedPct);
+            }
+            for (Map.Entry<String, Double> entry : deduped.entrySet()) {
+                encoded.add(entry.getKey() + "|" + entry.getValue());
+            }
+        }
+
         saveListSetting(
                 TAXATION_CATEGORY_OPTIONS_SETTING,
                 "Menu editor master list for choice group taxation category options",
-                values);
+                encoded);
+    }
+
+    private TaxationCategoryRate parseTaxationCategoryRate(String raw) {
+        String cleaned = trimToNull(raw);
+        if (cleaned == null) {
+            return null;
+        }
+
+        int separator = cleaned.lastIndexOf('|');
+        if (separator <= 0 || separator >= cleaned.length() - 1) {
+            return new TaxationCategoryRate(cleaned, 0d);
+        }
+
+        String name = trimToNull(cleaned.substring(0, separator));
+        String rateText = trimToNull(cleaned.substring(separator + 1));
+        if (name == null) {
+            return null;
+        }
+        if (rateText == null) {
+            return new TaxationCategoryRate(name, 0d);
+        }
+
+        try {
+            return new TaxationCategoryRate(name, Double.valueOf(rateText));
+        } catch (NumberFormatException ignored) {
+            return new TaxationCategoryRate(cleaned, 0d);
+        }
     }
 
     private List<String> getListSetting(String settingName, List<String> defaults) {
