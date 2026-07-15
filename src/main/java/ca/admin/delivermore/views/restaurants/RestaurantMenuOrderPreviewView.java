@@ -1,0 +1,1353 @@
+package ca.admin.delivermore.views.restaurants;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.H4;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.masterdetaillayout.MasterDetailLayout;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
+import com.vaadin.flow.component.orderedlayout.FlexComponent;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.Scroller;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
+import com.vaadin.flow.component.textfield.NumberField;
+import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.value.ValueChangeMode;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.Route;
+import com.vaadin.flow.shared.Registration;
+
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.CategoryData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.ItemData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.OptionData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.OptionGroupData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.PreviewData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.SizeData;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.LineItemRequest;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SelectedOptionRequest;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SubmissionResult;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SubmitOrderRequest;
+import ca.admin.delivermore.views.MainLayout;
+import ca.admin.delivermore.views.UIUtilities;
+import jakarta.annotation.security.RolesAllowed;
+
+@PageTitle("Menu Preview & Test Ordering")
+@Route(value = "restaurants/menu-preview", layout = MainLayout.class)
+@RolesAllowed("ADMIN")
+public class RestaurantMenuOrderPreviewView extends VerticalLayout implements BeforeEnterObserver {
+
+    private static final String RESTAURANT_ID_QP = "restaurantId";
+    private static final int MOBILE_OVERLAY_BREAKPOINT = 900;
+    private static final String TIP_MODE_AMOUNT = "Tip Amount";
+    private static final String TIP_MODE_PERCENT = "Tip Percent";
+
+    private final RestaurantMenuOrderPreviewService previewService;
+    private final RestaurantMenuOrderSubmissionService submissionService;
+
+    private Long restaurantId;
+    private PreviewData previewData;
+    private final List<OrderLine> cartLines = new ArrayList<>();
+    private final CheckoutState checkoutState = new CheckoutState();
+
+    private final H3 title = new H3("Preview & Test Ordering");
+    private final Button backButton = new Button("Back to Menu Editor");
+    private final VerticalLayout menuContent = new VerticalLayout();
+    private final VerticalLayout cartContent = new VerticalLayout();
+    private final Scroller menuScroller = new Scroller(menuContent);
+    private final Scroller cartScroller = new Scroller(cartContent);
+    private final MasterDetailLayout masterDetailLayout = new MasterDetailLayout();
+    private final HorizontalLayout headerLayout = new HorizontalLayout();
+    private final HorizontalLayout headerActionsRow = new HorizontalLayout();
+    private final Button showCartButton = new Button("Show Cart", VaadinIcon.CART.create());
+    private final Button closeCartButton = new Button("Close", VaadinIcon.CLOSE_SMALL.create());
+
+    private Registration browserResizeRegistration;
+    private boolean mobileOverlayMode;
+    private boolean cartOverlayOpen;
+    private boolean updatingTipFields;
+    private VerticalLayout checkoutTipBlock;
+    private RadioButtonGroup<String> checkoutTipModeField;
+    private NumberField checkoutTipAmountField;
+    private NumberField checkoutTipPercentField;
+    private Span checkoutTipBaseTotalValue;
+    private Span checkoutTipAmountValue;
+    private Span checkoutEstimatedTotalValue;
+
+    public RestaurantMenuOrderPreviewView(
+            RestaurantMenuOrderPreviewService previewService,
+            RestaurantMenuOrderSubmissionService submissionService) {
+        this.previewService = previewService;
+        this.submissionService = submissionService;
+        setSizeFull();
+        setPadding(false);
+        setSpacing(true);
+
+        menuContent.setPadding(false);
+        menuContent.setSpacing(true);
+        menuContent.setWidthFull();
+
+        cartContent.setPadding(false);
+        cartContent.setSpacing(true);
+        cartContent.setWidthFull();
+        cartContent.getStyle().set("box-sizing", "border-box");
+        cartContent.getStyle().set("padding-bottom", "calc(var(--lumo-space-xl) + env(safe-area-inset-bottom, 0px))");
+
+        menuScroller.setSizeFull();
+
+        cartScroller.setSizeFull();
+
+        masterDetailLayout.setSizeFull();
+        masterDetailLayout.setMaster(menuScroller);
+        masterDetailLayout.setDetail(cartScroller);
+        masterDetailLayout.setMasterSize("62%");
+        masterDetailLayout.setDetailSize("38%");
+        masterDetailLayout.setOverlayMode(MasterDetailLayout.OverlayMode.DRAWER);
+        masterDetailLayout.setContainment(MasterDetailLayout.Containment.LAYOUT);
+
+        backButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+        backButton.addClickListener(event -> UI.getCurrent()
+            .navigate(RestaurantMenuEditorView.class,
+                new com.vaadin.flow.router.QueryParameters(Map.of(RESTAURANT_ID_QP, List.of(String.valueOf(restaurantId))))));
+
+        showCartButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        showCartButton.setVisible(false);
+        showCartButton.addClickListener(event -> openCartOverlay());
+
+        closeCartButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        closeCartButton.setVisible(false);
+        closeCartButton.addClickListener(event -> closeCartOverlay());
+
+        masterDetailLayout.addBackdropClickListener(event -> closeCartOverlay());
+        masterDetailLayout.addDetailEscapePressListener(event -> closeCartOverlay());
+
+        headerActionsRow.setWidthFull();
+        headerActionsRow.setAlignItems(FlexComponent.Alignment.CENTER);
+        headerActionsRow.setSpacing(true);
+        headerActionsRow.add(backButton, showCartButton);
+
+        headerLayout.setWidthFull();
+        headerLayout.setPadding(false);
+        headerLayout.setSpacing(false);
+        headerLayout.getStyle().set("flex-wrap", "wrap");
+        headerLayout.add(headerActionsRow, title);
+
+        addAttachListener(event -> {
+            if (browserResizeRegistration == null) {
+                browserResizeRegistration = event.getUI()
+                        .getPage()
+                        .addBrowserWindowResizeListener(resizeEvent -> updateOverlayMode(resizeEvent.getWidth()));
+            }
+            event.getUI()
+                    .getPage()
+                    .executeJs("return window.innerWidth")
+                    .then(Integer.class, this::updateOverlayMode);
+        });
+        addDetachListener(event -> {
+            if (browserResizeRegistration != null) {
+                browserResizeRegistration.remove();
+                browserResizeRegistration = null;
+            }
+        });
+
+        add(headerLayout, masterDetailLayout);
+        setFlexGrow(1, masterDetailLayout);
+    }
+
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        restaurantId = event.getLocation()
+                .getQueryParameters()
+                .getParameters()
+                .getOrDefault(RESTAURANT_ID_QP, List.of())
+                .stream()
+                .findFirst()
+                .flatMap(this::parseLong)
+                .orElse(null);
+
+        if (restaurantId == null) {
+            clearView("No restaurant selected. Open this page from the menu editor.");
+            return;
+        }
+
+        try {
+            previewData = previewService.loadPreviewData(restaurantId);
+        } catch (IllegalStateException ex) {
+            clearView(ex.getMessage());
+            return;
+        }
+
+        title.setText(previewData.restaurant().getName() + " - Preview & Test Ordering");
+        renderMenu();
+        renderCart();
+    }
+
+    private void updateOverlayMode(int viewportWidth) {
+        boolean shouldUseOverlay = viewportWidth > 0 && viewportWidth < MOBILE_OVERLAY_BREAKPOINT;
+        mobileOverlayMode = shouldUseOverlay;
+        masterDetailLayout.setForceOverlay(shouldUseOverlay);
+
+        if (shouldUseOverlay) {
+            masterDetailLayout.setOverlayMode(MasterDetailLayout.OverlayMode.STACK);
+            masterDetailLayout.setContainment(MasterDetailLayout.Containment.VIEWPORT);
+        } else {
+            masterDetailLayout.setOverlayMode(MasterDetailLayout.OverlayMode.DRAWER);
+            masterDetailLayout.setContainment(MasterDetailLayout.Containment.LAYOUT);
+        }
+
+        if (shouldUseOverlay) {
+            if (cartOverlayOpen) {
+                masterDetailLayout.setDetail(cartScroller);
+            } else {
+                masterDetailLayout.setDetail(null);
+            }
+        } else {
+            cartOverlayOpen = false;
+            masterDetailLayout.setDetail(cartScroller);
+        }
+
+        updateHeaderLayout();
+        updateCartButtons();
+    }
+
+    private void updateHeaderLayout() {
+        if (mobileOverlayMode) {
+            headerLayout.setAlignItems(FlexComponent.Alignment.START);
+            title.setWidthFull();
+            title.getStyle().set("margin", "var(--lumo-space-s) 0 0 0");
+            headerActionsRow.setJustifyContentMode(FlexComponent.JustifyContentMode.BETWEEN);
+            headerActionsRow.expand(backButton);
+            showCartButton.getStyle().set("flex-shrink", "0");
+        } else {
+            headerLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+            title.setWidth(null);
+            title.getStyle().set("margin", "0");
+            headerActionsRow.setJustifyContentMode(FlexComponent.JustifyContentMode.START);
+            headerActionsRow.setFlexGrow(0, backButton);
+            showCartButton.getStyle().remove("flex-shrink");
+        }
+    }
+
+    private void openCartOverlay() {
+        if (!mobileOverlayMode) {
+            return;
+        }
+        cartOverlayOpen = true;
+        masterDetailLayout.setDetail(cartScroller);
+        updateCartButtons();
+    }
+
+    private void closeCartOverlay() {
+        if (!mobileOverlayMode) {
+            return;
+        }
+        cartOverlayOpen = false;
+        masterDetailLayout.setDetail(null);
+        updateCartButtons();
+    }
+
+    private void updateCartButtons() {
+        updateShowCartButtonLabel();
+        showCartButton.setVisible(mobileOverlayMode && !cartOverlayOpen);
+        closeCartButton.setVisible(mobileOverlayMode && cartOverlayOpen);
+    }
+
+    private void updateShowCartButtonLabel() {
+        int itemCount = cartLines.stream().mapToInt(OrderLine::quantity).sum();
+        if (itemCount <= 0) {
+            showCartButton.setText("Show Cart");
+            return;
+        }
+        showCartButton.setText(itemCount == 1 ? "Cart 1 item" : "Cart " + itemCount + " items");
+    }
+
+    private void clearView(String message) {
+        menuContent.removeAll();
+        cartContent.removeAll();
+        title.setText("Preview & Test Ordering");
+        menuContent.add(createMutedText(message));
+    }
+
+    private void renderMenu() {
+        menuContent.removeAll();
+        if (previewData == null) {
+            return;
+        }
+
+        for (CategoryData category : previewData.categories()) {
+            menuContent.add(buildCategorySection(category));
+        }
+    }
+
+    private Component buildCategorySection(CategoryData category) {
+        VerticalLayout section = new VerticalLayout();
+        section.setPadding(false);
+        section.setSpacing(true);
+        section.setWidthFull();
+
+        H4 heading = new H4(category.name());
+        heading.getStyle().set("margin", "0");
+        heading.getStyle().set("font-size", "1.65rem");
+        heading.getStyle().set("letter-spacing", "0.02em");
+
+        section.add(heading);
+        if (category.description() != null && !category.description().isBlank()) {
+            Span description = new Span(category.description());
+            description.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            section.add(description);
+        }
+
+        Div grid = new Div();
+        grid.getStyle().set("display", "grid");
+        grid.getStyle().set("grid-template-columns", "repeat(auto-fit, minmax(320px, 1fr))");
+        grid.getStyle().set("gap", "12px");
+        grid.setWidthFull();
+
+        for (ItemData item : category.items()) {
+            grid.add(buildItemCard(item));
+        }
+        section.add(grid);
+        return section;
+    }
+
+    private Component buildItemCard(ItemData item) {
+        VerticalLayout card = new VerticalLayout();
+        card.setPadding(true);
+        card.setSpacing(true);
+        card.setWidthFull();
+        card.getStyle().set("border", "2px solid var(--lumo-contrast-20pct)");
+        card.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
+        card.getStyle().set("background", "var(--lumo-base-color)");
+        card.getStyle().set("cursor", item.outOfStock() ? "not-allowed" : "pointer");
+        card.getStyle().set("opacity", item.outOfStock() ? "0.7" : "1");
+        card.getStyle().set("transition", "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease");
+        if (!item.outOfStock()) {
+            card.getStyle().set("box-shadow", "var(--lumo-box-shadow-xs)");
+            card.getElement().addEventListener("mouseenter", event -> {
+                card.getStyle().set("transform", "translateY(-2px)");
+                card.getStyle().set("box-shadow", "var(--lumo-box-shadow-s)");
+                card.getStyle().set("border-color", "var(--lumo-primary-color-50pct)");
+            });
+            card.getElement().addEventListener("mouseleave", event -> {
+                card.getStyle().set("transform", "translateY(0)");
+                card.getStyle().set("box-shadow", "var(--lumo-box-shadow-xs)");
+                card.getStyle().set("border-color", "var(--lumo-contrast-20pct)");
+            });
+            card.addClickListener(event -> openItemDialog(item));
+        }
+
+        HorizontalLayout top = new HorizontalLayout();
+        top.setWidthFull();
+        top.setAlignItems(FlexComponent.Alignment.START);
+
+        VerticalLayout text = new VerticalLayout();
+        text.setPadding(false);
+        text.setSpacing(false);
+        text.setWidthFull();
+
+        Span name = new Span(item.name());
+        name.getStyle().set("font-weight", "700");
+        name.getStyle().set("font-size", "1.05rem");
+
+        Span description = new Span(item.description() == null ? "" : item.description());
+        description.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        description.getStyle().set("font-size", "var(--lumo-font-size-s)");
+
+        text.add(name, description);
+
+        Span price = new Span(formatCurrency(minimumDisplayPrice(item)));
+        price.getStyle().set("font-weight", "700");
+        price.getStyle().set("white-space", "nowrap");
+
+        top.add(text, price);
+        top.expand(text);
+
+        HorizontalLayout badges = new HorizontalLayout();
+        badges.setSpacing(true);
+        badges.setPadding(false);
+        if (item.outOfStock()) {
+            badges.add(createBadge("No stock", "error"));
+        }
+        if (item.tags().contains("HOT")) {
+            badges.add(createBadge("Hot", "contrast"));
+        }
+        card.add(top, badges);
+        return card;
+    }
+
+    private Span createBadge(String text, String variant) {
+        Span badge = new Span(text);
+        badge.getElement().getThemeList().add("badge " + variant);
+        return badge;
+    }
+
+    private void openItemDialog(ItemData item) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(item.name());
+        dialog.setWidth("720px");
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+
+        if (item.description() != null && !item.description().isBlank()) {
+            Span description = new Span(item.description());
+            description.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            content.add(description);
+        }
+
+        TextArea instructionsField = new TextArea("Special instructions");
+        instructionsField.setWidthFull();
+        instructionsField.setPlaceholder("Example: No pepper / sugar / salt please.");
+
+        NumberField quantityField = new NumberField("Quantity");
+        quantityField.setWidth("160px");
+        quantityField.setStep(1d);
+        quantityField.setMin(1d);
+        quantityField.setValue(1d);
+
+        Span totalLabel = new Span();
+        totalLabel.getStyle().set("font-weight", "700");
+        totalLabel.getStyle().set("font-size", "1.1rem");
+
+        VerticalLayout groupsContainer = new VerticalLayout();
+        groupsContainer.setPadding(false);
+        groupsContainer.setSpacing(true);
+        groupsContainer.setWidthFull();
+
+        List<GroupCollector> collectors = new ArrayList<>();
+        List<OptionGroupData> activeGroups = new ArrayList<>();
+
+        RadioButtonGroup<SizeData> sizeField = null;
+        if (!item.sizes().isEmpty()) {
+            sizeField = new RadioButtonGroup<>();
+            sizeField.setLabel("Size");
+            sizeField.setItems(item.sizes());
+            sizeField.setItemLabelGenerator(size -> size.name() + " (" + formatCurrency(size.absolutePrice()) + ")");
+            sizeField.setRequiredIndicatorVisible(true);
+            SizeData defaultSize = item.sizes().stream().filter(SizeData::defaultSize).findFirst().orElse(item.sizes().getFirst());
+            sizeField.setValue(defaultSize);
+            content.add(sizeField);
+        }
+
+        final RadioButtonGroup<SizeData> sizeSelector = sizeField;
+
+        Runnable updateTotals = () -> {
+            double quantity = quantityField.getValue() == null ? 1d : Math.max(1d, quantityField.getValue());
+            SizeData currentSize = sizeSelector == null ? null : sizeSelector.getValue();
+            double unitPrice = resolveBaseUnitPrice(item, currentSize) + collectors.stream()
+                    .flatMap(collector -> collector.collectSelections().get().stream())
+                    .mapToDouble(selection -> selection.unitPrice() * selection.quantity())
+                    .sum();
+            totalLabel.setText("Current total: " + formatCurrency(unitPrice * quantity));
+        };
+
+        java.util.function.Consumer<SizeData> rebuildGroups = selectedSize -> {
+            groupsContainer.removeAll();
+            collectors.clear();
+            activeGroups.clear();
+            activeGroups.addAll(item.optionGroups());
+            if (selectedSize != null) {
+                activeGroups.addAll(selectedSize.optionGroups());
+            }
+
+            activeGroups.stream()
+                    .sorted(Comparator.comparing(OptionGroupData::name, Comparator.nullsLast(String::compareToIgnoreCase)))
+                    .forEach(group -> {
+                        GroupCollector collector = buildGroupCollector(group, updateTotals);
+                        collectors.add(collector);
+                        groupsContainer.add(collector.component());
+                    });
+            updateTotals.run();
+        };
+
+        if (sizeField != null) {
+            RadioButtonGroup<SizeData> finalSizeField = sizeField;
+            sizeField.addValueChangeListener(event -> rebuildGroups.accept(finalSizeField.getValue()));
+            rebuildGroups.accept(sizeField.getValue());
+        } else {
+            rebuildGroups.accept(null);
+        }
+
+        quantityField.addValueChangeListener(event -> updateTotals.run());
+        content.add(groupsContainer, instructionsField, quantityField, totalLabel);
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button addToCart = new Button("Add to cart", event -> {
+            SizeData selectedSize = sizeSelector == null ? null : sizeSelector.getValue();
+            if (sizeSelector != null && selectedSize == null) {
+                showError("Size is required");
+                return;
+            }
+
+            for (GroupCollector collector : collectors) {
+                Optional<String> validation = collector.validate().get();
+                if (validation.isPresent()) {
+                    showError(validation.get());
+                    return;
+                }
+            }
+
+            int quantity = quantityField.getValue() == null ? 1 : Math.max(1, quantityField.getValue().intValue());
+            List<SelectedOptionLine> selections = collectors.stream()
+                    .flatMap(collector -> collector.collectSelections().get().stream())
+                    .toList();
+
+            double unitBasePrice = resolveBaseUnitPrice(item, selectedSize);
+            double optionTotal = selections.stream()
+                    .mapToDouble(selection -> selection.unitPrice() * selection.quantity())
+                    .sum();
+            double unitPrice = roundCurrency(unitBasePrice + optionTotal);
+
+            cartLines.add(new OrderLine(
+                    item,
+                    selectedSize,
+                    selections,
+                    instructionsField.getValue(),
+                    quantity,
+                    unitPrice));
+            dialog.close();
+            renderCart();
+            showSuccess("Added to cart");
+        });
+        addToCart.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(content);
+        dialog.getFooter().add(cancel, addToCart);
+        dialog.open();
+    }
+
+    private GroupCollector buildGroupCollector(OptionGroupData group, Runnable updateTotals) {
+        if (!group.allowQuantity() && group.forceMax() <= 1) {
+            return buildSingleSelectCollector(group, updateTotals);
+        }
+        return buildMultiSelectCollector(group, updateTotals);
+    }
+
+    private GroupCollector buildSingleSelectCollector(OptionGroupData group, Runnable updateTotals) {
+        VerticalLayout wrapper = new VerticalLayout();
+        wrapper.setPadding(false);
+        wrapper.setSpacing(true);
+
+        Span groupTitle = new Span(group.name() + labelSuffix(group));
+        groupTitle.getStyle().set("font-weight", "600");
+
+        RadioButtonGroup<OptionChoice> choices = new RadioButtonGroup<>();
+        List<OptionChoice> items = new ArrayList<>();
+        if (!group.required()) {
+            items.add(new OptionChoice(null));
+        }
+        group.options().stream()
+                .filter(option -> !option.outOfStock())
+                .map(OptionChoice::new)
+                .forEach(items::add);
+        choices.setItems(items);
+        choices.setItemLabelGenerator(choice -> choice.option() == null
+                ? "None"
+                : choice.option().name() + priceSuffix(choice.option().price()));
+        choices.addValueChangeListener(event -> updateTotals.run());
+
+        if (group.required()) {
+            group.options().stream().filter(OptionData::defaultOption).findFirst().ifPresent(option -> choices.setValue(new OptionChoice(option)));
+        }
+
+        wrapper.add(groupTitle, choices);
+        return new GroupCollector(
+                wrapper,
+                () -> {
+                    OptionChoice selected = choices.getValue();
+                    if (selected == null || selected.option() == null) {
+                        return List.of();
+                    }
+                    return List.of(new SelectedOptionLine(group.name(), selected.option().name(), selected.option().price(), 1, group.taxationCategory()));
+                },
+                () -> {
+                    if (group.required() && (choices.getValue() == null || choices.getValue().option() == null)) {
+                        return Optional.of(group.name() + " is required");
+                    }
+                    return Optional.empty();
+                });
+    }
+
+    private GroupCollector buildMultiSelectCollector(OptionGroupData group, Runnable updateTotals) {
+        VerticalLayout wrapper = new VerticalLayout();
+        wrapper.setPadding(false);
+        wrapper.setSpacing(true);
+
+        Span groupTitle = new Span(group.name() + labelSuffix(group));
+        groupTitle.getStyle().set("font-weight", "600");
+        wrapper.add(groupTitle);
+
+        List<MultiSelectionRow> rows = new ArrayList<>();
+        for (OptionData option : group.options()) {
+            if (option.outOfStock()) {
+                continue;
+            }
+            HorizontalLayout row = new HorizontalLayout();
+            row.setAlignItems(FlexComponent.Alignment.END);
+            row.setWidthFull();
+
+            Checkbox selected = new Checkbox(option.name() + priceSuffix(option.price()));
+            selected.setValue(option.defaultOption());
+
+            NumberField quantity = new NumberField("Qty");
+            quantity.setStep(1d);
+            quantity.setMin(0d);
+            quantity.setWidth("120px");
+            quantity.setVisible(group.allowQuantity());
+            quantity.setValue(option.defaultOption() ? 1d : 0d);
+            if (!group.allowQuantity()) {
+                quantity.setEnabled(false);
+            }
+
+            selected.addValueChangeListener(event -> {
+                if (group.allowQuantity()) {
+                    Double currentQty = quantity.getValue();
+                    quantity.setValue(Boolean.TRUE.equals(event.getValue()) ? Math.max(1d, currentQty == null ? 1d : currentQty) : 0d);
+                }
+                updateTotals.run();
+            });
+            quantity.addValueChangeListener(event -> updateTotals.run());
+
+            row.add(selected, quantity);
+            row.expand(selected);
+            wrapper.add(row);
+            rows.add(new MultiSelectionRow(option, selected, quantity));
+        }
+
+        return new GroupCollector(
+                wrapper,
+                () -> rows.stream()
+                        .filter(row -> Boolean.TRUE.equals(row.selected().getValue()))
+                        .map(row -> new SelectedOptionLine(
+                                group.name(),
+                                row.option().name(),
+                                row.option().price(),
+                                group.allowQuantity() ? Math.max(1, toInt(row.quantity().getValue())) : 1,
+                                group.taxationCategory()))
+                        .toList(),
+                () -> {
+                    int selectedCount = rows.stream()
+                            .filter(row -> Boolean.TRUE.equals(row.selected().getValue()))
+                            .mapToInt(row -> group.allowQuantity() ? Math.max(1, toInt(row.quantity().getValue())) : 1)
+                            .sum();
+                    if (group.forceMin() > 0 && selectedCount < group.forceMin()) {
+                        return Optional.of(group.name() + " requires at least " + group.forceMin() + " selection(s)");
+                    }
+                    if (group.forceMax() > 0 && selectedCount > group.forceMax()) {
+                        return Optional.of(group.name() + " allows at most " + group.forceMax() + " selection(s)");
+                    }
+                    return Optional.empty();
+                });
+    }
+
+    private void renderCart() {
+        cartContent.removeAll();
+        if (previewData == null) {
+            return;
+        }
+
+        updateShowCartButtonLabel();
+
+        HorizontalLayout headerRow = new HorizontalLayout();
+        headerRow.setWidthFull();
+        headerRow.setAlignItems(FlexComponent.Alignment.CENTER);
+        headerRow.getStyle().set("position", "sticky");
+        headerRow.getStyle().set("top", "0");
+        headerRow.getStyle().set("z-index", "1");
+        headerRow.getStyle().set("background", "var(--lumo-base-color)");
+        headerRow.getStyle().set("padding", "var(--lumo-space-s) 0");
+        headerRow.getStyle().set("border-bottom", "1px solid var(--lumo-contrast-10pct)");
+
+        H4 header = new H4("Cart & Checkout");
+        header.getStyle().set("margin", "0");
+        headerRow.add(header, closeCartButton);
+        headerRow.expand(header);
+        cartContent.add(headerRow);
+
+        cartContent.add(buildRestaurantInfoCard());
+        cartContent.add(buildCartCard());
+        cartContent.add(buildCheckoutCard());
+    }
+
+    private Component buildRestaurantInfoCard() {
+        VerticalLayout card = createCard();
+        card.add(new Span("Restaurant"));
+        card.add(createMutedText(previewData.restaurant().getName()));
+        card.add(new Span("Delivery fee"));
+        card.add(createMutedText(formatCurrency(previewData.deliveryFee())));
+        card.add(new Span("Approval flow"));
+        card.add(createMutedText(previewData.restaurant().getAutoApproveOrders()
+            ? "Auto-approved immediately"
+            : "Manual approval required before Tookan submission"));
+        return card;
+    }
+
+    private Component buildCartCard() {
+        VerticalLayout card = createCard();
+        H4 cartHeader = new H4("Cart");
+        cartHeader.getStyle().set("margin", "0");
+        card.add(cartHeader);
+
+        if (cartLines.isEmpty()) {
+            card.add(createMutedText("No items added yet. Select an item from the menu to begin testing the order flow."));
+            return card;
+        }
+
+        for (int index = 0; index < cartLines.size(); index++) {
+            int lineIndex = index;
+            OrderLine line = cartLines.get(index);
+            card.add(buildOrderLineCard(line, () -> {
+                cartLines.remove(lineIndex);
+                renderCart();
+            }));
+        }
+
+        card.add(buildTotalsSection());
+        return card;
+    }
+
+    private Component buildOrderLineCard(OrderLine line, Runnable onRemove) {
+        VerticalLayout wrapper = new VerticalLayout();
+        wrapper.setPadding(false);
+        wrapper.setSpacing(false);
+        wrapper.getStyle().set("border-bottom", "1px solid var(--lumo-contrast-10pct)");
+        wrapper.getStyle().set("padding", "0 0 12px 0");
+
+        HorizontalLayout top = new HorizontalLayout();
+        top.setWidthFull();
+        Span lineTitle = new Span(line.item().name() + (line.selectedSize() == null ? "" : " [" + line.selectedSize().name() + "]"));
+        lineTitle.getStyle().set("font-weight", "600");
+        Span price = new Span(formatCurrency(line.totalPrice()));
+        Button remove = new Button(VaadinIcon.CLOSE_SMALL.create(), event -> onRemove.run());
+        remove.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        top.add(lineTitle, price, remove);
+        top.expand(lineTitle);
+
+        wrapper.add(top);
+        wrapper.add(createMutedText("Qty: " + line.quantity()));
+        for (SelectedOptionLine selection : line.selections()) {
+            wrapper.add(createMutedText(selection.groupName() + ": " + selection.optionName()
+                    + (selection.quantity() > 1 ? " x" + selection.quantity() : "")
+                    + priceSuffix(selection.unitPrice())));
+        }
+        if (line.instructions() != null && !line.instructions().isBlank()) {
+            wrapper.add(createMutedText("Instructions: " + line.instructions()));
+        }
+        return wrapper;
+    }
+
+    private Component buildTotalsSection() {
+        VerticalLayout totals = new VerticalLayout();
+        totals.setPadding(false);
+        totals.setSpacing(false);
+        totals.setWidthFull();
+        totals.getStyle().set("padding-top", "12px");
+
+        totals.add(buildTotalRow("Sub-total", calculateSubTotal()));
+        totals.add(buildTotalRow("Service fee", calculateServiceFee()));
+        totals.add(buildTotalRow("GST (5%)", calculateGst()));
+        if (calculateCategoryTax() > 0d) {
+            totals.add(buildTotalRow("Tax on items", calculateCategoryTax()));
+        }
+        totals.add(buildTotalRow("Delivery fee", calculateDeliveryFee()));
+        totals.add(buildTotalRow("Delivery fee tax (5%)", calculateDeliveryFeeTax()));
+        if (isOnlinePaymentMethod(checkoutState.paymentMethod) || calculateTipAmount() > 0d) {
+            totals.add(buildTotalRow("Tip", calculateTipAmount()));
+        }
+        totals.add(buildStrongTotalRow("Total", calculateGrandTotal()));
+        return totals;
+    }
+
+    private Component buildCheckoutCard() {
+        VerticalLayout card = createCard();
+        card.getStyle().set("margin-bottom", "calc(var(--lumo-space-m) + env(safe-area-inset-bottom, 0px))");
+        H4 checkoutHeader = new H4("Checkout");
+        checkoutHeader.getStyle().set("margin", "0");
+        card.add(checkoutHeader);
+
+        TextField contactName = new TextField("Contact name");
+        contactName.setWidthFull();
+        contactName.setValue(checkoutState.contactName);
+        contactName.addValueChangeListener(event -> checkoutState.contactName = valueOrBlank(event.getValue()));
+
+        TextField contactEmail = new TextField("Email");
+        contactEmail.setWidthFull();
+        contactEmail.setValue(checkoutState.contactEmail);
+        contactEmail.addValueChangeListener(event -> checkoutState.contactEmail = valueOrBlank(event.getValue()));
+
+        TextField contactPhone = new TextField("Phone");
+        contactPhone.setWidthFull();
+        contactPhone.setValue(checkoutState.contactPhone);
+        contactPhone.addValueChangeListener(event -> checkoutState.contactPhone = valueOrBlank(event.getValue()));
+
+        TextField street = new TextField("Street address");
+        street.setWidthFull();
+        street.setValue(checkoutState.street);
+        street.addValueChangeListener(event -> checkoutState.street = valueOrBlank(event.getValue()));
+
+        TextField city = new TextField("Town / city");
+        city.setWidthFull();
+        city.setValue(checkoutState.city);
+        city.addValueChangeListener(event -> checkoutState.city = valueOrBlank(event.getValue()));
+
+        TextField postal = new TextField("Postal code");
+        postal.setWidthFull();
+        postal.setValue(checkoutState.postalCode);
+        postal.addValueChangeListener(event -> checkoutState.postalCode = valueOrBlank(event.getValue()));
+
+        ComboBox<String> paymentMethod = new ComboBox<>("Payment method");
+        paymentMethod.setWidthFull();
+        paymentMethod.setItems(List.of("Cash", "Card to delivery person", "Online"));
+        paymentMethod.setValue(checkoutState.paymentMethod);
+
+        Checkbox fulfilmentOption = new Checkbox("In-person delivery");
+        fulfilmentOption.setValue(checkoutState.inPersonDelivery);
+        fulfilmentOption.addValueChangeListener(event -> checkoutState.inPersonDelivery = Boolean.TRUE.equals(event.getValue()));
+
+        paymentMethod.addValueChangeListener(event -> {
+            String selectedMethod = event.getValue() == null ? "Cash" : event.getValue();
+            checkoutState.paymentMethod = selectedMethod;
+            if (!isOnlinePaymentMethod(selectedMethod)) {
+                checkoutState.tipMode = TIP_MODE_AMOUNT;
+                checkoutState.tipAmount = 0d;
+                checkoutState.tipPercent = 0d;
+            }
+            renderCart();
+        });
+        applyFulfillmentRule(checkoutState.paymentMethod, fulfilmentOption);
+
+        checkoutTipBlock = new VerticalLayout();
+        checkoutTipBlock.setPadding(false);
+        checkoutTipBlock.setSpacing(true);
+        checkoutTipBlock.setWidthFull();
+
+        checkoutTipModeField = new RadioButtonGroup<>();
+        checkoutTipModeField.setLabel("Tip mode");
+        checkoutTipModeField.setWidthFull();
+        checkoutTipModeField.setItems(TIP_MODE_AMOUNT, TIP_MODE_PERCENT);
+        checkoutTipModeField.setValue(checkoutState.tipMode);
+
+        checkoutTipPercentField = new NumberField("Tip %");
+        checkoutTipPercentField.setWidthFull();
+        checkoutTipPercentField.setMin(0);
+        checkoutTipPercentField.setMax(999);
+        checkoutTipPercentField.setStep(1);
+        checkoutTipPercentField.setStepButtonsVisible(true);
+        checkoutTipPercentField.setValue(checkoutState.tipPercent);
+        checkoutTipPercentField.setValueChangeMode(ValueChangeMode.EAGER);
+        checkoutTipPercentField.setAutoselect(true);
+
+        checkoutTipAmountField = UIUtilities.getNumberField("Tip amount", false, "$");
+        checkoutTipAmountField.setWidthFull();
+        checkoutTipAmountField.setMin(0);
+        checkoutTipAmountField.setStep(0.01);
+        checkoutTipAmountField.setValue(checkoutState.tipAmount);
+        checkoutTipAmountField.setValueChangeMode(ValueChangeMode.EAGER);
+        checkoutTipAmountField.setAutoselect(true);
+
+        checkoutTipBaseTotalValue = new Span();
+        checkoutTipAmountValue = new Span();
+        checkoutEstimatedTotalValue = new Span();
+
+        VerticalLayout tipInfoBlock = new VerticalLayout();
+        tipInfoBlock.setPadding(false);
+        tipInfoBlock.setSpacing(false);
+        tipInfoBlock.setWidthFull();
+        tipInfoBlock.add(
+                buildInfoRow("Current total before tip", checkoutTipBaseTotalValue),
+                buildInfoRow("Tip amount", checkoutTipAmountValue),
+                buildInfoRow("Estimated total with tip", checkoutEstimatedTotalValue));
+
+        checkoutTipModeField.addValueChangeListener(event -> {
+            String selectedMode = event.getValue() == null ? TIP_MODE_AMOUNT : event.getValue();
+            checkoutState.tipMode = selectedMode;
+            if (TIP_MODE_PERCENT.equals(selectedMode)) {
+                checkoutState.tipPercent = 0d;
+                checkoutState.tipAmount = 0d;
+            }
+            syncTipFields();
+        });
+
+        checkoutTipAmountField.addValueChangeListener(event -> {
+            if (updatingTipFields) {
+                return;
+            }
+            if (TIP_MODE_PERCENT.equals(checkoutState.tipMode)) {
+                return;
+            }
+            checkoutState.tipAmount = roundCurrency(event.getValue() == null ? 0d : Math.max(0d, event.getValue()));
+            double baseTotal = calculateTipBaseTotal();
+            if (baseTotal <= 0d) {
+                checkoutState.tipPercent = 0d;
+            } else {
+                checkoutState.tipPercent = Math.min(999d,
+                        roundCurrency((checkoutState.tipAmount / baseTotal) * 100d));
+            }
+            refreshTipSummary();
+        });
+
+        checkoutTipPercentField.addValueChangeListener(event -> {
+            if (updatingTipFields) {
+                return;
+            }
+            if (!TIP_MODE_PERCENT.equals(checkoutState.tipMode)) {
+                return;
+            }
+            checkoutState.tipPercent = event.getValue() == null ? 0d : Math.max(0d, event.getValue());
+            checkoutState.tipAmount = roundCurrency(calculateTipBaseTotal() * (checkoutState.tipPercent / 100d));
+            refreshTipSummary();
+        });
+
+        TextArea comments = new TextArea("Comments");
+        comments.setWidthFull();
+        comments.setValue(checkoutState.comments);
+        comments.addValueChangeListener(event -> checkoutState.comments = valueOrBlank(event.getValue()));
+
+        card.add(contactName, contactEmail, contactPhone, street, city, postal);
+        checkoutTipBlock.add(
+                checkoutTipModeField,
+                checkoutTipPercentField,
+                checkoutTipAmountField,
+                tipInfoBlock);
+        checkoutTipBlock.setVisible(isOnlinePaymentMethod(checkoutState.paymentMethod));
+        card.add(paymentMethod, checkoutTipBlock, fulfilmentOption, comments);
+
+        syncTipFields();
+
+        Button placeOrder = new Button("Place Delivery Order Now", event -> {
+            if (cartLines.isEmpty()) {
+                showError("Add at least one item before placing the order");
+                return;
+            }
+            try {
+                SubmissionResult result = submissionService.submitOrder(buildSubmitOrderRequest());
+                cartLines.clear();
+                checkoutState.clear();
+                renderCart();
+                if (mobileOverlayMode) {
+                    closeCartOverlay();
+                }
+                showSuccess(result.message());
+            } catch (IllegalArgumentException | IllegalStateException ex) {
+                showError(ex.getMessage());
+            }
+        });
+        placeOrder.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        placeOrder.setWidthFull();
+        card.add(placeOrder);
+        return card;
+    }
+
+    private SubmitOrderRequest buildSubmitOrderRequest() {
+        return new SubmitOrderRequest(
+                restaurantId,
+                checkoutState.contactName,
+                checkoutState.contactEmail,
+                checkoutState.contactPhone,
+                checkoutState.street,
+                checkoutState.city,
+                checkoutState.postalCode,
+                checkoutState.paymentMethod,
+                checkoutState.inPersonDelivery,
+                calculateTipAmount(),
+                checkoutState.comments,
+                cartLines.stream()
+                        .map(line -> new LineItemRequest(
+                                line.item().id(),
+                                line.item().name(),
+                                line.selectedSize() == null ? "" : line.selectedSize().name(),
+                                line.quantity(),
+                                line.unitPrice(),
+                                line.instructions(),
+                                line.primaryTaxCategory(),
+                                line.selections().stream()
+                                        .map(selection -> new SelectedOptionRequest(
+                                                selection.groupName(),
+                                                selection.optionName(),
+                                                selection.unitPrice(),
+                                                selection.quantity(),
+                                                selection.taxationCategory()))
+                                        .toList()))
+                        .toList());
+    }
+
+    private void applyFulfillmentRule(String paymentMethod, Checkbox fulfilmentOption) {
+        boolean onlinePayment = isOnlinePaymentMethod(paymentMethod);
+        fulfilmentOption.setVisible(onlinePayment);
+
+        if (onlinePayment) {
+            checkoutState.inPersonDelivery = false;
+            fulfilmentOption.setValue(false);
+            return;
+        }
+
+        checkoutState.inPersonDelivery = true;
+        fulfilmentOption.setValue(true);
+    }
+
+    private HorizontalLayout buildTotalRow(String label, double value) {
+        HorizontalLayout row = new HorizontalLayout();
+        row.setWidthFull();
+        Span left = createMutedText(label);
+        Span right = createMutedText(formatCurrency(value));
+        row.add(left, right);
+        row.expand(left);
+        return row;
+    }
+
+    private HorizontalLayout buildStrongTotalRow(String label, double value) {
+        HorizontalLayout row = new HorizontalLayout();
+        row.setWidthFull();
+        Span left = new Span(label);
+        left.getStyle().set("font-weight", "700");
+        Span right = new Span(formatCurrency(value));
+        right.getStyle().set("font-weight", "700");
+        row.add(left, right);
+        row.expand(left);
+        return row;
+    }
+
+    private HorizontalLayout buildInfoRow(String label, Span valueSpan) {
+        HorizontalLayout row = new HorizontalLayout();
+        row.setWidthFull();
+        row.setSpacing(true);
+        row.setAlignItems(FlexComponent.Alignment.CENTER);
+        Span left = createMutedText(label);
+        valueSpan.getStyle().set("font-weight", "600");
+        row.add(left, valueSpan);
+        row.expand(left);
+        return row;
+    }
+
+    private VerticalLayout createCard() {
+        VerticalLayout card = new VerticalLayout();
+        card.setPadding(true);
+        card.setSpacing(true);
+        card.setWidthFull();
+        card.getStyle().set("border", "1px solid var(--lumo-contrast-10pct)");
+        card.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
+        card.getStyle().set("background", "var(--lumo-base-color)");
+        return card;
+    }
+
+    private Span createMutedText(String text) {
+        Span span = new Span(text);
+        span.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        span.getStyle().set("font-size", "var(--lumo-font-size-s)");
+        return span;
+    }
+
+    private double minimumDisplayPrice(ItemData item) {
+        if (item.sizes().isEmpty()) {
+            return item.basePrice();
+        }
+        return item.sizes().stream().mapToDouble(SizeData::absolutePrice).min().orElse(item.basePrice());
+    }
+
+    private double resolveBaseUnitPrice(ItemData item, SizeData selectedSize) {
+        if (selectedSize != null) {
+            return selectedSize.absolutePrice();
+        }
+        return item.basePrice();
+    }
+
+    private double calculateSubTotal() {
+        return roundCurrency(cartLines.stream().mapToDouble(OrderLine::totalPrice).sum());
+    }
+
+    private double calculateServiceFee() {
+        return roundCurrency(calculateSubTotal() * previewData.serviceFeeRate());
+    }
+
+    private double calculateGst() {
+        return roundCurrency(calculateSubTotal() * RestaurantMenuOrderPreviewService.GST_RATE);
+    }
+
+    private double calculateCategoryTax() {
+        double total = 0d;
+        for (OrderLine line : cartLines) {
+            String taxCategory = line.primaryTaxCategory();
+            if (taxCategory == null) {
+                continue;
+            }
+            double pct = previewData.taxationRates().getOrDefault(taxCategory, 0d);
+            total += line.totalPrice() * (pct / 100d);
+        }
+        return roundCurrency(total);
+    }
+
+    private double calculateDeliveryFee() {
+        return previewData.deliveryFee();
+    }
+
+    private double calculateDeliveryFeeTax() {
+        return roundCurrency(calculateDeliveryFee() * RestaurantMenuOrderPreviewService.GST_RATE);
+    }
+
+    private double calculateTipBaseTotal() {
+        return roundCurrency(calculateSubTotal()
+                + calculateServiceFee()
+                + calculateGst()
+                + calculateCategoryTax()
+                + calculateDeliveryFee()
+                + calculateDeliveryFeeTax());
+    }
+
+    private double calculateTipAmount() {
+        return roundCurrency(checkoutState.tipAmount);
+    }
+
+    private double calculateGrandTotal() {
+        return roundCurrency(calculateTipBaseTotal() + calculateTipAmount());
+    }
+
+    private void refreshTipSummary() {
+        if (checkoutTipBaseTotalValue != null) {
+            checkoutTipBaseTotalValue.setText(formatCurrency(calculateTipBaseTotal()));
+        }
+        if (checkoutTipAmountValue != null) {
+            checkoutTipAmountValue.setText(formatCurrency(calculateTipAmount()));
+        }
+        if (checkoutEstimatedTotalValue != null) {
+            checkoutEstimatedTotalValue.setText(formatCurrency(calculateGrandTotal()));
+        }
+    }
+
+    private void syncTipFields() {
+        updatingTipFields = true;
+        try {
+            if (checkoutTipModeField != null && !Objects.equals(checkoutTipModeField.getValue(), checkoutState.tipMode)) {
+                checkoutTipModeField.setValue(checkoutState.tipMode);
+            }
+            boolean percentMode = TIP_MODE_PERCENT.equals(checkoutState.tipMode);
+            if (checkoutTipPercentField != null) {
+                checkoutTipPercentField.setVisible(percentMode);
+                Double percentValue = roundCurrency(checkoutState.tipPercent);
+                if (!Objects.equals(checkoutTipPercentField.getValue(), percentValue)) {
+                    checkoutTipPercentField.setValue(percentValue);
+                }
+            }
+            if (checkoutTipAmountField != null) {
+                checkoutTipAmountField.setVisible(!percentMode);
+                checkoutTipAmountField.setReadOnly(false);
+                Double amountValue = roundCurrency(checkoutState.tipAmount);
+                if (!Objects.equals(checkoutTipAmountField.getValue(), amountValue)) {
+                    checkoutTipAmountField.setValue(amountValue);
+                }
+            }
+            if (checkoutTipAmountValue != null) {
+                checkoutTipAmountValue.setVisible(true);
+            }
+            if (checkoutTipBlock != null) {
+                checkoutTipBlock.setVisible(isOnlinePaymentMethod(checkoutState.paymentMethod));
+            }
+        } finally {
+            updatingTipFields = false;
+        }
+        refreshTipSummary();
+    }
+
+    private boolean isOnlinePaymentMethod(String paymentMethod) {
+        return "Online".equalsIgnoreCase(paymentMethod);
+    }
+
+    private String formatCurrency(double value) {
+        return String.format(Locale.CANADA, "$%.2f", roundCurrency(value));
+    }
+
+    private double roundCurrency(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private String priceSuffix(double price) {
+        return price == 0d ? "" : " (" + formatCurrency(price) + ")";
+    }
+
+    private String labelSuffix(OptionGroupData group) {
+        List<String> parts = new ArrayList<>();
+        if (group.required()) {
+            parts.add("Required");
+        }
+        if (group.forceMin() > 0) {
+            parts.add("Min " + group.forceMin());
+        }
+        if (group.forceMax() > 0) {
+            parts.add("Max " + group.forceMax());
+        }
+        return parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")";
+    }
+
+    private int toInt(Double value) {
+        if (value == null) {
+            return 0;
+        }
+        return value.intValue();
+    }
+
+    private String valueOrBlank(String value) {
+        return value == null ? "" : value;
+    }
+
+    private Optional<Long> parseLong(String raw) {
+        try {
+            return Optional.of(Long.valueOf(raw));
+        } catch (NumberFormatException ex) {
+            return Optional.empty();
+        }
+    }
+
+    private void showError(String message) {
+        Notification notification = Notification.show(message, 3000, Notification.Position.MIDDLE);
+        notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
+    }
+
+    private void showSuccess(String message) {
+        Notification notification = Notification.show(message, 2000, Notification.Position.BOTTOM_START);
+        notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+    }
+
+    private record OptionChoice(OptionData option) {
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof OptionChoice other)) {
+                return false;
+            }
+            return Objects.equals(option == null ? null : option.id(), other.option == null ? null : other.option.id());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(option == null ? null : option.id());
+        }
+    }
+
+    private record MultiSelectionRow(OptionData option, Checkbox selected, NumberField quantity) {
+    }
+
+    private record SelectedOptionLine(String groupName, String optionName, double unitPrice, int quantity, String taxationCategory) {
+    }
+
+    private record GroupCollector(
+            Component component,
+            java.util.function.Supplier<List<SelectedOptionLine>> collectSelections,
+            java.util.function.Supplier<Optional<String>> validate) {
+    }
+
+    private static final class OrderLine {
+        private final ItemData item;
+        private final SizeData selectedSize;
+        private final List<SelectedOptionLine> selections;
+        private final String instructions;
+        private final int quantity;
+        private final double unitPrice;
+
+        private OrderLine(
+                ItemData item,
+                SizeData selectedSize,
+                List<SelectedOptionLine> selections,
+                String instructions,
+                int quantity,
+                double unitPrice) {
+            this.item = item;
+            this.selectedSize = selectedSize;
+            this.selections = List.copyOf(selections);
+            this.instructions = instructions;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+        }
+
+        private ItemData item() {
+            return item;
+        }
+
+        private SizeData selectedSize() {
+            return selectedSize;
+        }
+
+        private List<SelectedOptionLine> selections() {
+            return selections;
+        }
+
+        private String instructions() {
+            return instructions;
+        }
+
+        private int quantity() {
+            return quantity;
+        }
+
+        private double unitPrice() {
+            return unitPrice;
+        }
+
+        private double totalPrice() {
+            return BigDecimal.valueOf(unitPrice)
+                    .multiply(BigDecimal.valueOf(quantity))
+                    .setScale(2, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        private String primaryTaxCategory() {
+            return selections.stream()
+                    .map(SelectedOptionLine::taxationCategory)
+                    .filter(value -> value != null && !value.isBlank())
+                    .findFirst()
+                    .orElse("Food");
+        }
+    }
+
+    private static final class CheckoutState {
+        private String contactName = "";
+        private String contactEmail = "";
+        private String contactPhone = "";
+        private String street = "";
+        private String city = "";
+        private String postalCode = "";
+        private String paymentMethod = "Cash";
+        private boolean inPersonDelivery = false;
+        private String tipMode = TIP_MODE_AMOUNT;
+        private double tipAmount = 0d;
+        private double tipPercent = 0d;
+        private String comments = "";
+
+        private void clear() {
+            contactName = "";
+            contactEmail = "";
+            contactPhone = "";
+            street = "";
+            city = "";
+            postalCode = "";
+            paymentMethod = "Cash";
+            inPersonDelivery = false;
+            tipMode = TIP_MODE_AMOUNT;
+            tipAmount = 0d;
+            tipPercent = 0d;
+            comments = "";
+        }
+    }
+}

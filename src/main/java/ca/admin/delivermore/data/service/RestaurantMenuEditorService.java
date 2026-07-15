@@ -580,6 +580,10 @@ public class RestaurantMenuEditorService {
         return restaurantMenuOptionGroupEditorRepository.findByMenuVersionIdAndItemIdOrderByDisplayOrderAscNameAsc(menuVersionId, itemId);
     }
 
+    public List<RestaurantMenuOptionGroup> listOptionGroupsForItemSize(Long menuVersionId, Long itemSizeId) {
+        return restaurantMenuOptionGroupEditorRepository.findByMenuVersionIdAndItemSizeId(menuVersionId, itemSizeId);
+    }
+
     public List<RestaurantMenuOption> listOptionsForGroup(Long optionGroupId) {
         return restaurantMenuOptionEditorRepository.findByOptionGroupIdOrderByDisplayOrderAscNameAsc(optionGroupId);
     }

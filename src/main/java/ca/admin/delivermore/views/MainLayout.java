@@ -46,6 +46,7 @@ import ca.admin.delivermore.views.report.PeriodSummaryView;
 import ca.admin.delivermore.views.restaurants.RestInvoiceView;
 import ca.admin.delivermore.views.restaurants.RestPayoutView;
 import ca.admin.delivermore.views.restaurants.RestView;
+import ca.admin.delivermore.views.restaurants.StagedRestaurantOrdersView;
 
 /**
  * The main view is a top-level placeholder for other views.
@@ -144,6 +145,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
         //only add the menu folder if the user has access to at least one of the sub views
         if (checkAccess(DriversView.class)
                 || checkAccess(RestView.class)
+            || checkAccess(StagedRestaurantOrdersView.class)
             || checkAccess(TEAMS_VIEW_CLASS)
             || checkAccess(TASK_LIST_VIEW_CLASS)
                 || checkAccess(QBOConnectView.class)
@@ -175,6 +177,10 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 SideNavItem restMenu = new SideNavItem("Restaurants", RestView.class, VaadinIcon.SHOP.create());
                 //SideNavItem restMenu = new SideNavItem("Restaurants", RestView.class, "la la-store-alt");
                 utilities.addItem(restMenu);
+            }
+            if (checkAccess(StagedRestaurantOrdersView.class)) {
+                SideNavItem approvalsMenu = new SideNavItem("Order Approvals", StagedRestaurantOrdersView.class, VaadinIcon.CHECK_SQUARE_O.create());
+                utilities.addItem(approvalsMenu);
             }
             if (checkAccess(TASK_LIST_VIEW_CLASS)) {
                 SideNavItem taskListMenu = new SideNavItem("Task List", "tasklist", VaadinIcon.LIST.create());

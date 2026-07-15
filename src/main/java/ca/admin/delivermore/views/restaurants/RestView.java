@@ -18,6 +18,7 @@ import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datepicker.DatePickerVariant;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -84,6 +85,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
     private NumberField dialogRestCommPerDelivery = UIUtilities.getNumberField("Per Delivery", false, "$");
     private NumberField dialogRestCommPerPhonin = UIUtilities.getNumberField("Per Phonein", false, "$");
+    private NumberField dialogRestDeliveryFee = UIUtilities.getNumberField("Delivery Fee", false, "$");
 
     private NumberField dialogRestDelFeeFromVendor = UIUtilities.getNumberField("Fee from Vendor", false, "$");
     private IntegerField dialogRestStartDayOffset = UIUtilities.getIntegerField("Start Day Offset",false,0);
@@ -94,6 +96,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private Checkbox dialogRestActiveForPayout = new Checkbox();
     private Checkbox dialogRestInvoicedVendor = new Checkbox();
     private Checkbox dialogRestProcessOrderText = new Checkbox();
+    private Checkbox dialogRestAutoApproveOrders = new Checkbox();
 
     private TextField dialogRestGlobalAuthCode = UIUtilities.getTextField("Global Code");
     private TextField dialogRestFetchMenuKey = UIUtilities.getTextField("Fetch Menu Key");
@@ -158,6 +161,13 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             return detailsDeleteIcon;
         }).setWidth("50px").setFlexGrow(0);
 
+        grid.addComponentColumn(restaurant -> {
+            Button menuEditorButton = new Button("Menu");
+            menuEditorButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            menuEditorButton.addClickListener(event -> UI.getCurrent().navigate("restaurants/menu-editor?restaurantId=" + restaurant.getRestaurantId()));
+            return menuEditorButton;
+        }).setHeader("Menu Editor");
+
         grid.addColumn(Restaurant::getName)
                 .setFlexGrow(0)
                 .setHeader("Name").setFrozen(true);
@@ -182,6 +192,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 .setHeader("Email");
         grid.addColumn(Restaurant::getCommissionPerDelivery).setHeader("Per Delivery");
         grid.addColumn(Restaurant::getCommissionPerPhonein).setHeader("Per Phonein");
+        grid.addColumn(Restaurant::getDeliveryFee).setHeader("Delivery Fee");
         grid.addColumn(Restaurant::getDeliveryFeeFromVendor).setHeader("Fee from Vendor");
         grid.addColumn(Restaurant::getStartDayOffset).setHeader("Startday Offset");
         String statusWidth = "100px";
@@ -190,16 +201,10 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getActiveForPayout())).setWidth(statusWidth).setComparator(Restaurant::getActiveForPayout).setHeader("Active for payout");
         grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getUseInvoiceProcessing())).setWidth(statusWidth).setComparator(Restaurant::getUseInvoiceProcessing).setHeader("Invoiced Vendor");
         grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getProcessOrderText())).setWidth(statusWidth).setComparator(Restaurant::getProcessOrderText).setHeader("Add order details");
+        grid.addComponentColumn(restaurant -> createCheckIcon(restaurant.getAutoApproveOrders())).setWidth(statusWidth).setComparator(Restaurant::getAutoApproveOrders).setHeader("Auto approve");
         grid.addColumn(Restaurant::getGlobalAuthCode).setHeader("Global Code");
         grid.addColumn(Restaurant::getFetchMenuKey).setHeader("Fetch Menu Key");
         grid.addColumn(Restaurant::getFormId).setHeader("Form Id");
-        grid.addComponentColumn(restaurant -> {
-            Button menuEditorButton = new Button("Menu");
-            menuEditorButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            menuEditorButton.addClickListener(event -> UI.getCurrent().navigate("restaurants/menu-editor?restaurantId=" + restaurant.getRestaurantId()));
-            return menuEditorButton;
-        }).setHeader("Menu Editor");
-
         grid.addComponentColumn(restaurant -> {
             Button resetMenuButton = new Button("Reset Pulls");
             resetMenuButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
@@ -217,7 +222,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         configureDatePicker();
         add(getToolbar());
         add(grid);
-        locationChoice.addListener(this);
+        locationChoice.addListener(this::locationChanged);
         grid.setItems(restaurantRepository.getEffectiveRestaurants(LocalDate.now()));
 
     }
@@ -309,8 +314,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             Restaurant clonedRestaurant = new Restaurant();
             BeanUtils.copyProperties(item, clonedRestaurant);
             LocalDate nowDate = LocalDate.now();
-            LocalDate prevSun = nowDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
-            prevSun = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+            LocalDate prevSun = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
             clonedRestaurant.setDateEffective(prevSun);
             dialogMode = DialogMode.NEW_CLONE;
             dialogOpen(clonedRestaurant);
@@ -326,10 +330,8 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     }
 
     private String getCommissionFormatted(Double rate){
-        String commission = "";
         if(rate==null || rate.equals(0.0)) return "";
-        commission = getDoubleAsInteger(rate) + "%";
-        return commission;
+        return getDoubleAsInteger(rate) + "%";
     }
 
     private HorizontalLayout getToolbar(){
@@ -388,6 +390,8 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                     newRest.setCommissionRatePhonein(0.15);
                     newRest.setCommissionPerPhonein(0.0);
                     newRest.setCommissionPerDelivery(0.0);
+                    newRest.setDeliveryFee(0.0);
+                    newRest.setAutoApproveOrders(false);
                     newRest.setActiveForPayout(true);
                     dialogTabSheet.setSelectedTab(dialogTabOther);
                     dialogMode = DialogMode.NEW;
@@ -422,8 +426,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         newRestDialogName.clear();
 
         LocalDate nowDate = LocalDate.now();
-        LocalDate prevSun = nowDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
-        prevSun = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDate prevSun = nowDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
 
         newRestDialogEffectiveDate.setValue(prevSun);
         newRestDialog.open();
@@ -475,7 +478,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.getDataProvider().refreshAll();
     }
 
-    public void dialogConfigure() {
+    private void dialogConfigure() {
         restDialog.getElement().setAttribute("aria-label", "Edit restaurant details");
 
         VerticalLayout dialogLayout = dialogLayout();
@@ -602,8 +605,20 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestCommPerPhonin.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
-        HorizontalLayout commissionPerFieldsLayout = UIUtilities.getHorizontalLayout(false,true,false);
-        commissionPerFieldsLayout.add(dialogRestCommPerDelivery,dialogRestCommPerPhonin);
+        dialogRestDeliveryFee.setReadOnly(false);
+        dialogRestDeliveryFee.addThemeVariants(TextFieldVariant.LUMO_SMALL);
+        dialogRestDeliveryFee.setWidth(halfFieldWidth);
+        dialogRestDeliveryFee.addValueChangeListener(e -> {
+            if(validationEnabled) dialogValidate();
+        });
+        FormLayout commissionPerFieldsLayout = new FormLayout();
+        commissionPerFieldsLayout.setWidthFull();
+        commissionPerFieldsLayout.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("34em", 2),
+            new FormLayout.ResponsiveStep("48em", 3)
+        );
+        commissionPerFieldsLayout.add(dialogRestCommPerDelivery,dialogRestCommPerPhonin,dialogRestDeliveryFee);
 
         dialogRestDelFeeFromVendor.setReadOnly(false);
         dialogRestDelFeeFromVendor.addThemeVariants(TextFieldVariant.LUMO_SMALL);
@@ -656,8 +671,14 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestProcessOrderText.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
+        dialogRestAutoApproveOrders.setLabel("Auto approve orders");
+        dialogRestAutoApproveOrders.setReadOnly(false);
+        dialogRestAutoApproveOrders.setWidth(halfFieldWidth);
+        dialogRestAutoApproveOrders.addValueChangeListener(e -> {
+            if(validationEnabled) dialogValidate();
+        });
         HorizontalLayout fieldsLayout5b = UIUtilities.getHorizontalLayout(false,true,false);
-        fieldsLayout5b.add(dialogRestProcessOrderText);
+        fieldsLayout5b.add(dialogRestProcessOrderText,dialogRestAutoApproveOrders);
 
         dialogRestGlobalAuthCode.setReadOnly(false);
         dialogRestGlobalAuthCode.addThemeVariants(TextFieldVariant.LUMO_SMALL);
@@ -679,7 +700,13 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestFormId.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
-        HorizontalLayout fieldsLayout6 = UIUtilities.getHorizontalLayout(false,true,false);
+        FormLayout fieldsLayout6 = new FormLayout();
+        fieldsLayout6.setWidthFull();
+        fieldsLayout6.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("34em", 2),
+            new FormLayout.ResponsiveStep("48em", 3)
+        );
         fieldsLayout6.add(dialogRestGlobalAuthCode,dialogRestFetchMenuKey,dialogRestFormId);
 
         VerticalLayout otherFieldsLayout = UIUtilities.getVerticalLayout();
@@ -754,6 +781,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             dialogRestCommPerPhonin.setValue(selectedRestaurant.getCommissionPerPhonein());
         }
+        if(selectedRestaurant.getDeliveryFee()==null){
+            dialogRestDeliveryFee.setValue(0.0);
+        }else{
+            dialogRestDeliveryFee.setValue(selectedRestaurant.getDeliveryFee());
+        }
         if(selectedRestaurant.getDeliveryFeeFromVendor()==null){
             dialogRestDelFeeFromVendor.setValue(0.0);
         }else{
@@ -764,15 +796,16 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestPOSPhonein.setValue(selectedRestaurant.getPosPhonein());
         dialogRestActiveForPayout.setValue(selectedRestaurant.getActiveForPayout());
         if(selectedRestaurant.getUseInvoiceProcessing()==null){
-            dialogRestProcessOrderText.setValue(Boolean.FALSE);
+            dialogRestInvoicedVendor.setValue(Boolean.FALSE);
         }else{
-            dialogRestProcessOrderText.setValue(selectedRestaurant.getUseInvoiceProcessing());
+            dialogRestInvoicedVendor.setValue(selectedRestaurant.getUseInvoiceProcessing());
         }
         if(selectedRestaurant.getProcessOrderText()==null){
             dialogRestProcessOrderText.setValue(Boolean.FALSE);
         }else{
             dialogRestProcessOrderText.setValue(selectedRestaurant.getProcessOrderText());
         }
+        dialogRestAutoApproveOrders.setValue(selectedRestaurant.getAutoApproveOrders());
         if(selectedRestaurant.getGlobalAuthCode()==null || selectedRestaurant.getGlobalAuthCode().isEmpty()){
             dialogRestGlobalAuthCode.setValue("");
         }else{
@@ -812,6 +845,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateIntegerField(dialogRestCommissionPhonein, getDoubleAsInteger(selectedRestaurant.getCommissionRatePhonein()));
                 validateField(dialogRestCommPerDelivery,selectedRestaurant.getCommissionPerDelivery());
                 validateField(dialogRestCommPerPhonin,selectedRestaurant.getCommissionPerPhonein());
+                validateField(dialogRestDeliveryFee,selectedRestaurant.getDeliveryFee());
                 validateField(dialogRestDelFeeFromVendor,selectedRestaurant.getDeliveryFeeFromVendor());
                 validateIntegerField(dialogRestStartDayOffset, selectedRestaurant.getStartDayOffset());
                 validateCheckbox(dialogRestPOSGlobal,selectedRestaurant.getPosGlobal());
@@ -819,6 +853,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateCheckbox(dialogRestActiveForPayout,selectedRestaurant.getActiveForPayout());
                 validateCheckbox(dialogRestInvoicedVendor,selectedRestaurant.getUseInvoiceProcessing());
                 validateCheckbox(dialogRestProcessOrderText,selectedRestaurant.getProcessOrderText());
+                validateCheckbox(dialogRestAutoApproveOrders,selectedRestaurant.getAutoApproveOrders());
                 validateTextField(dialogRestGlobalAuthCode, selectedRestaurant.getGlobalAuthCode());
                 validateTextField(dialogRestFetchMenuKey, selectedRestaurant.getFetchMenuKey());
                 validateIntegerField(dialogRestFormId, Math.toIntExact(selectedRestaurant.getFormId()));
@@ -921,8 +956,10 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }
     }
 
-    private void validateEmailField(ListBox field, String fieldValue, String value){
-        if(fieldValue.equals(value) || (value==null && field.isEmpty()) || (fieldValue==null && value.isEmpty())){
+    private void validateEmailField(ListBox<?> field, String fieldValue, String value){
+        String normalizedFieldValue = fieldValue == null ? "" : fieldValue;
+        String normalizedValue = value == null ? "" : value;
+        if(normalizedFieldValue.equals(normalizedValue) || (normalizedValue.isEmpty() && field.isEmpty())){
             field.getStyle().set("box-shadow","none");
         }else{
             field.getStyle().set("box-shadow",UIUtilities.boxShadowStyle);
@@ -960,6 +997,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             selectedRestaurant.setCommissionPerPhonein(dialogRestCommPerPhonin.getValue());
         }
+        if(dialogRestDeliveryFee.getValue()==null){
+            selectedRestaurant.setDeliveryFee(0.0);
+        }else{
+            selectedRestaurant.setDeliveryFee(dialogRestDeliveryFee.getValue());
+        }
         if(dialogRestDelFeeFromVendor.getValue()==null){
             selectedRestaurant.setDeliveryFeeFromVendor(0.0);
         }else{
@@ -975,6 +1017,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         selectedRestaurant.setActiveForPayout(dialogRestActiveForPayout.getValue());
         selectedRestaurant.setUseInvoiceProcessing(dialogRestInvoicedVendor.getValue());
         selectedRestaurant.setProcessOrderText(dialogRestProcessOrderText.getValue());
+        selectedRestaurant.setAutoApproveOrders(dialogRestAutoApproveOrders.getValue());
         if(dialogRestGlobalAuthCode.getValue()==null){
             selectedRestaurant.setGlobalAuthCode("");
         }else{

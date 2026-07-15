@@ -1,0 +1,288 @@
+package ca.admin.delivermore.data.service;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import ca.admin.delivermore.collector.data.entity.OrderDetail;
+import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder;
+import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus;
+import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrderLine;
+import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrderLineOption;
+import ca.admin.delivermore.collector.data.service.EmailService;
+import ca.admin.delivermore.collector.data.service.OrderDetailRepository;
+import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderLineOptionRepository;
+import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderLineRepository;
+import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderRepository;
+
+@Service
+public class StagedRestaurantOrderWorkflowService {
+
+    private static final Logger log = LoggerFactory.getLogger(StagedRestaurantOrderWorkflowService.class);
+    private static final String DECISION_EMAIL_SUBJECT_PREFIX = "Order decision: ";
+
+    private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
+    private final OrderDetailRepository orderDetailRepository;
+    private final StagedRestaurantOrderLineRepository stagedRestaurantOrderLineRepository;
+    private final StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository;
+    private final EmailService emailService;
+
+    @Value("${app.orders.support-email}")
+    private String supportEmail;
+
+    public StagedRestaurantOrderWorkflowService(
+            StagedRestaurantOrderRepository stagedRestaurantOrderRepository,
+            OrderDetailRepository orderDetailRepository,
+            StagedRestaurantOrderLineRepository stagedRestaurantOrderLineRepository,
+            StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository,
+            EmailService emailService) {
+        this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
+        this.orderDetailRepository = orderDetailRepository;
+        this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
+        this.stagedRestaurantOrderLineOptionRepository = stagedRestaurantOrderLineOptionRepository;
+        this.emailService = emailService;
+    }
+
+    public List<StagedRestaurantOrder> listPendingApprovals() {
+        return stagedRestaurantOrderRepository.findByApprovalStatusOrderBySubmittedAtDesc(ApprovalStatus.PENDING_APPROVAL);
+    }
+
+    public List<StagedRestaurantOrder> listAll() {
+        return stagedRestaurantOrderRepository.findAllByOrderBySubmittedAtDesc();
+    }
+
+    @Transactional
+    public StagedRestaurantOrder approve(Long stagedOrderId) {
+        StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
+        ensureCanTransition(stagedOrder, "approve");
+
+        OrderDetail orderDetail = buildOrderDetail(stagedOrder);
+        orderDetailRepository.save(orderDetail);
+
+        LocalDateTime now = LocalDateTime.now();
+        stagedOrder.setApprovalStatus(ApprovalStatus.APPROVED);
+        stagedOrder.setApprovedAt(now);
+        stagedOrder.setStatusUpdatedAt(now);
+        stagedOrder.setOrderDetailId(orderDetail.getOrderId());
+        stagedOrder.setStatusReason(null);
+        return stagedRestaurantOrderRepository.save(stagedOrder);
+    }
+
+    @Transactional
+    public StagedRestaurantOrder decline(Long stagedOrderId, String reason) {
+        StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
+        ensureCanTransition(stagedOrder, "decline");
+        stagedOrder.setStatusReason(requireReason(reason, "Decline reason is required."));
+
+        stagedOrder.setApprovalStatus(ApprovalStatus.DECLINED);
+        stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
+        stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        sendDecisionEmailIfConfigured(stagedOrder);
+        return stagedRestaurantOrderRepository.save(stagedOrder);
+    }
+
+    @Transactional
+    public StagedRestaurantOrder cancel(Long stagedOrderId, String reason) {
+        StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
+        ensureCanTransition(stagedOrder, "cancel");
+
+        stagedOrder.setApprovalStatus(ApprovalStatus.CANCELED);
+        stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
+        stagedOrder.setStatusReason(optionalReason(reason));
+        stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        sendDecisionEmailIfConfigured(stagedOrder);
+        return stagedRestaurantOrderRepository.save(stagedOrder);
+    }
+
+    private StagedRestaurantOrder getById(Long stagedOrderId) {
+        return stagedRestaurantOrderRepository.findById(stagedOrderId)
+                .orElseThrow(() -> new IllegalArgumentException("Staged order not found: " + stagedOrderId));
+    }
+
+    private void ensureCanTransition(StagedRestaurantOrder stagedOrder, String action) {
+        if (stagedOrder.getApprovalStatus() != ApprovalStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Cannot " + action + " order #" + stagedOrder.getId()
+                    + " because it is " + stagedOrder.getApprovalStatus());
+        }
+    }
+
+    private String requireReason(String reason, String errorMessage) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+        return reason.trim();
+    }
+
+    private String optionalReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        return reason.trim();
+    }
+
+    private void sendDecisionEmailIfConfigured(StagedRestaurantOrder stagedOrder) {
+        if (supportEmail == null || supportEmail.isBlank()) {
+            return;
+        }
+
+        try {
+            emailService.sendMailWithHtmlBody(
+                    supportEmail,
+                    DECISION_EMAIL_SUBJECT_PREFIX + stagedOrder.getRestaurantName() + " #" + stagedOrder.getId(),
+                    buildDecisionEmailBody(stagedOrder));
+            stagedOrder.setSupportEmailSentAt(LocalDateTime.now());
+        } catch (RuntimeException ex) {
+            log.error("Failed to send staged order decision email for order {}", stagedOrder.getId(), ex);
+        }
+    }
+
+    private String buildDecisionEmailBody(StagedRestaurantOrder stagedOrder) {
+        return "<p>A pending approval order has been " + stagedOrder.getApprovalStatus().name().toLowerCase()
+                + ".</p>"
+                + "<p><strong>Order #</strong> " + stagedOrder.getId() + "<br>"
+                + "<strong>Restaurant:</strong> " + escapeHtml(stagedOrder.getRestaurantName()) + "<br>"
+                + "<strong>Status:</strong> " + escapeHtml(stagedOrder.getApprovalStatus().name()) + "<br>"
+                + "<strong>Reason:</strong> " + escapeHtml(optionalText(stagedOrder.getStatusReason())) + "</p>"
+                + "<pre style=\"font-family:monospace;white-space:pre-wrap;\">"
+                + escapeHtml(stagedOrder.getOrderSummary())
+                + "</pre>";
+    }
+
+    private String optionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return "No reason provided.";
+        }
+        return value;
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    private OrderDetail buildOrderDetail(StagedRestaurantOrder stagedOrder) {
+        OrderDetail orderDetail = new OrderDetail();
+        orderDetail.setOrderId(generateOrderDetailId());
+        orderDetail.setRestaurantId(stagedOrder.getRestaurantId());
+        orderDetail.setSubtotal(defaultDouble(stagedOrder.getSubtotal()));
+        orderDetail.setDeliveryFee(defaultDouble(stagedOrder.getDeliveryFee()));
+        orderDetail.setServiceFee(defaultDouble(stagedOrder.getServiceFee()));
+        orderDetail.setTaxOnFees(defaultDouble(stagedOrder.getDeliveryFeeTax()));
+        orderDetail.setTotalTaxes(defaultDouble(stagedOrder.getGst())
+                + defaultDouble(stagedOrder.getItemTax())
+                + defaultDouble(stagedOrder.getDeliveryFeeTax()));
+        orderDetail.setTotal(defaultDouble(stagedOrder.getTotal()));
+        orderDetail.setPaymentMethod(normalizePaymentMethod(stagedOrder.getPaymentMethod()));
+        orderDetail.setOrderType("delivery");
+        orderDetail.setSource(OrderDetail.Source.DM);
+        orderDetail.setTip(defaultDouble(stagedOrder.getTip()));
+        orderDetail.setJsonSourceId(0L);
+        orderDetail.setClientName(stagedOrder.getContactName());
+        orderDetail.setOrderText(buildDriverOrderText(stagedOrder.getId()));
+        return orderDetail;
+    }
+
+    private String buildDriverOrderText(Long stagedOrderId) {
+        List<StagedRestaurantOrderLine> lines =
+                stagedRestaurantOrderLineRepository.findByStagedOrderIdOrderByLineNumberAsc(stagedOrderId);
+        List<StagedRestaurantOrderLineOption> options =
+                stagedRestaurantOrderLineOptionRepository.findByStagedOrderIdOrderByLineNumberAscIdAsc(stagedOrderId);
+
+        Map<Long, List<StagedRestaurantOrderLineOption>> optionsByLineId = new HashMap<>();
+        for (StagedRestaurantOrderLineOption option : options) {
+            optionsByLineId.computeIfAbsent(option.getStagedOrderLineId(), ignored -> new ArrayList<>()).add(option);
+        }
+
+        StringBuilder orderText = new StringBuilder();
+        String crlf = "\r\n";
+        String indent = "  - ";
+
+        for (StagedRestaurantOrderLine line : lines) {
+            if (!orderText.isEmpty()) {
+                orderText.append(crlf);
+            }
+
+            orderText.append(defaultInt(line.getQuantity()))
+                    .append(" x ")
+                    .append(safeText(line.getItemName()))
+                    .append(crlf);
+
+            if (!isBlank(line.getSelectedSizeName())) {
+                orderText.append(indent)
+                        .append("Size - ")
+                        .append(line.getSelectedSizeName().trim())
+                        .append(crlf);
+            }
+
+            if (!isBlank(line.getInstructions())) {
+                String info = line.getInstructions().trim().replace("\n", "\n    ");
+                orderText.append(indent)
+                        .append("Info: ")
+                        .append(info)
+                        .append(crlf);
+            }
+
+            for (StagedRestaurantOrderLineOption option : optionsByLineId.getOrDefault(line.getId(), List.of())) {
+                if (defaultInt(option.getQuantity()) > 1) {
+                    orderText.append(indent)
+                            .append(option.getQuantity())
+                            .append(" x ");
+                } else {
+                    orderText.append(indent);
+                }
+                orderText.append(safeText(option.getGroupName()))
+                        .append(" - ")
+                        .append(safeText(option.getOptionName()))
+                        .append(crlf);
+            }
+        }
+
+        return orderText.toString();
+    }
+
+    private String normalizePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return "CASH";
+        }
+        return paymentMethod.trim().toUpperCase();
+    }
+
+    private double defaultDouble(Double value) {
+        return value == null ? 0.0 : value;
+    }
+
+    private int defaultInt(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value;
+    }
+
+    private Long generateOrderDetailId() {
+        long candidate = System.currentTimeMillis();
+        while (orderDetailRepository.existsById(candidate)) {
+            candidate++;
+        }
+        return candidate;
+    }
+}

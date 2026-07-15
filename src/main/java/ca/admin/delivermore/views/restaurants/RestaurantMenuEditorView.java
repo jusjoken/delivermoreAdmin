@@ -116,6 +116,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     private final Span statusBanner = new Span();
     private final Button createDraftButton = new Button("Create Draft");
     private final Button publishDraftButton = new Button("Publish Draft");
+    private final Button previewButton = new Button("Preview & Test Ordering");
     private final MenuBar dataTablesMenu = new MenuBar();
     private final Button refreshButton = new Button("Refresh");
     
@@ -222,7 +223,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         Button backButton = new Button("Back to Restaurants", e -> UI.getCurrent().navigate("restaurants"));
         backButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
 
-        HorizontalLayout actions = new HorizontalLayout(createDraftButton, publishDraftButton, dataTablesMenu, refreshButton);
+        HorizontalLayout actions = new HorizontalLayout(createDraftButton, publishDraftButton, previewButton, dataTablesMenu, refreshButton);
         actions.setAlignItems(FlexComponent.Alignment.END);
         actions.setWidthFull();
 
@@ -881,6 +882,15 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     private void configureActions() {
         refreshButton.addClickListener(event -> refreshEditorData());
 
+        previewButton.addClickListener(event -> {
+            if (restaurantId == null) {
+                showError("No restaurant selected");
+                return;
+            }
+            UI.getCurrent().navigate(RestaurantMenuOrderPreviewView.class,
+                    new com.vaadin.flow.router.QueryParameters(Map.of(RESTAURANT_ID_QP, List.of(String.valueOf(restaurantId)))));
+        });
+
         createDraftButton.addClickListener(event -> {
             if (restaurantId == null) {
                 return;
@@ -1019,6 +1029,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         createDraftButton.setEnabled(!isDraft && !isPublished && restaurantId != null);
         publishDraftButton.setEnabled(isDraft);
+        previewButton.setEnabled(currentMenuVersion != null && restaurantId != null);
         dataTablesMenu.setEnabled(restaurantId != null);
         refreshButton.setEnabled(restaurantId != null);
     }
@@ -1592,7 +1603,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         taxationCategory.setWidthFull();
         taxationCategory.setItems(taxationCategoryOptions);
         taxationCategory.setClearButtonVisible(true);
-        taxationCategory.setHelperText("You can add other tax rates under Payments & Taxes -> Taxation");
+        taxationCategory.setHelperText("You can add other tax rates under Data Tables / Taxation Categories List");
         String selectedTaxationCategory = trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
         if (selectedTaxationCategory != null && !taxationCategoryOptions.contains(selectedTaxationCategory)) {
             taxationCategory.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(selectedTaxationCategory)).toList());
@@ -1670,7 +1681,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         taxationCategoryField.setWidthFull();
         taxationCategoryField.setItems(taxationCategoryOptions);
         taxationCategoryField.setClearButtonVisible(true);
-        taxationCategoryField.setHelperText("You can add other tax rates under Payments & Taxes -> Taxation");
+        taxationCategoryField.setHelperText("You can add other tax rates under Data Tables / Taxation Categories List");
         String selectedTaxationCategory = trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
         if (selectedTaxationCategory != null && !taxationCategoryOptions.contains(selectedTaxationCategory)) {
             taxationCategoryField.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(selectedTaxationCategory)).toList());
