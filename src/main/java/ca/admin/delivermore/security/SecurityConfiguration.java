@@ -7,11 +7,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
-import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 
 import com.vaadin.flow.spring.security.VaadinSecurityConfigurer;
 
@@ -30,6 +29,11 @@ public class SecurityConfiguration {
         return new BCryptPasswordEncoder();
     }
 
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web.ignoring().requestMatchers("/api/**");
+    }
+
     // Open public API endpoints; vaadin.exclude-urls=/api/** must be set in application.properties
     @Order(1)
     @Bean
@@ -45,7 +49,6 @@ public class SecurityConfiguration {
     @Order(20)
     @Bean
     public SecurityFilterChain vaadinSecurityFilterChain(HttpSecurity http) throws Exception {
-        http.securityMatcher(new NegatedRequestMatcher(PathPatternRequestMatcher.pathPattern("/api/**")));
         // Delegate Vaadin-specific security to VaadinSecurityConfigurer (replaces VaadinWebSecurity)
         http.with(VaadinSecurityConfigurer.vaadin(), vaadin -> vaadin.loginView(LoginView.class, LOGOUT_SUCCESS_URL));
         log.info("****SECURITY...here 0.1 - after new loginView");
