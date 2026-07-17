@@ -32,6 +32,7 @@ public class RestaurantMenuOrderSubmissionService {
     private final StagedRestaurantOrderTaxRateRepository stagedRestaurantOrderTaxRateRepository;
     private final StagedRestaurantOrderWorkflowService workflowService;
     private final StagedRestaurantOrderPayloadProjectionService payloadProjectionService;
+    private final TabletOrderDispatchService tabletOrderDispatchService;
 
     public RestaurantMenuOrderSubmissionService(
             RestaurantMenuOrderPreviewService previewService,
@@ -40,7 +41,8 @@ public class RestaurantMenuOrderSubmissionService {
             StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository,
             StagedRestaurantOrderTaxRateRepository stagedRestaurantOrderTaxRateRepository,
             StagedRestaurantOrderWorkflowService workflowService,
-            StagedRestaurantOrderPayloadProjectionService payloadProjectionService) {
+            StagedRestaurantOrderPayloadProjectionService payloadProjectionService,
+            TabletOrderDispatchService tabletOrderDispatchService) {
         this.previewService = previewService;
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
@@ -48,6 +50,7 @@ public class RestaurantMenuOrderSubmissionService {
         this.stagedRestaurantOrderTaxRateRepository = stagedRestaurantOrderTaxRateRepository;
         this.workflowService = workflowService;
         this.payloadProjectionService = payloadProjectionService;
+        this.tabletOrderDispatchService = tabletOrderDispatchService;
     }
 
     public SubmissionResult submitOrder(SubmitOrderRequest request) {
@@ -123,6 +126,7 @@ public class RestaurantMenuOrderSubmissionService {
         stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
         persistStructuredSnapshot(stagedOrder.getId(), request.lines(), previewData, usedCategoryTaxes);
         payloadProjectionService.buildPayloadJson(stagedOrder.getId());
+        tabletOrderDispatchService.dispatchOrderPush(stagedOrder);
 
         if (restaurant.getAutoApproveOrders()) {
             StagedRestaurantOrder approvedOrder = workflowService.approve(stagedOrder.getId());

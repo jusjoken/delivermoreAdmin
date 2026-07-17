@@ -1,10 +1,20 @@
 package ca.admin.delivermore.data.entity;
 
-import ca.admin.delivermore.collector.data.tookan.Driver;
-import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-
 import java.time.LocalDateTime;
+
+import ca.admin.delivermore.collector.data.tookan.Driver;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import jakarta.validation.constraints.NotBlank;
 
 @Entity
 @Table(name = "tablet_asset")
@@ -60,6 +70,19 @@ public class TabletAsset {
     @Column(length = 1000, nullable = false)
     private String notes = "";
 
+    @Lob
+    @Column(name = "fcm_registration_token", columnDefinition = "LONGTEXT")
+    private String fcmRegistrationToken;
+
+    @Column(name = "fcm_token_updated_at")
+    private LocalDateTime fcmTokenUpdatedAt;
+
+    @Column(name = "last_heartbeat_at")
+    private LocalDateTime lastHeartbeatAt;
+
+    @Column(name = "last_heartbeat_app_version")
+    private String lastHeartbeatAppVersion;
+
     public TabletAsset() {}
 
     public Long getId() { return id; }
@@ -106,7 +129,39 @@ public class TabletAsset {
 
     public void setNotes(String notes) {
         this.notes = notes == null ? "" : notes;
-    }    
+    }
+
+    public String getFcmRegistrationToken() {
+        return fcmRegistrationToken;
+    }
+
+    public void setFcmRegistrationToken(String fcmRegistrationToken) {
+        this.fcmRegistrationToken = fcmRegistrationToken;
+    }
+
+    public LocalDateTime getFcmTokenUpdatedAt() {
+        return fcmTokenUpdatedAt;
+    }
+
+    public void setFcmTokenUpdatedAt(LocalDateTime fcmTokenUpdatedAt) {
+        this.fcmTokenUpdatedAt = fcmTokenUpdatedAt;
+    }
+
+    public LocalDateTime getLastHeartbeatAt() {
+        return lastHeartbeatAt;
+    }
+
+    public void setLastHeartbeatAt(LocalDateTime lastHeartbeatAt) {
+        this.lastHeartbeatAt = lastHeartbeatAt;
+    }
+
+    public String getLastHeartbeatAppVersion() {
+        return lastHeartbeatAppVersion;
+    }
+
+    public void setLastHeartbeatAppVersion(String lastHeartbeatAppVersion) {
+        this.lastHeartbeatAppVersion = lastHeartbeatAppVersion;
+    }
     
     @Override
     public String toString() {

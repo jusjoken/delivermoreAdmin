@@ -8,11 +8,13 @@ package ca.admin.delivermore.data.service;
  *
  * @author birch
  */
-import ca.admin.delivermore.data.entity.TabletAsset;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
-import java.util.List;
+import ca.admin.delivermore.data.entity.TabletAsset;
 
 public interface TabletAssetRepository extends JpaRepository<TabletAsset, Long> {
 
@@ -26,4 +28,6 @@ public interface TabletAssetRepository extends JpaRepository<TabletAsset, Long> 
     long countByArchivedFalse();
 
     TabletAsset findByAssetTag(String assetTag);
+
+    Optional<TabletAsset> findFirstByRestaurantIdAndArchivedFalse(Long restaurantId);
 }

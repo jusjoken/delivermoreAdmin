@@ -24,6 +24,7 @@ import ca.admin.delivermore.data.service.StagedRestaurantOrderPayloadProjectionS
 import ca.admin.delivermore.data.service.StagedRestaurantOrderWorkflowService;
 import ca.admin.delivermore.data.service.TabletApiAccessService;
 import ca.admin.delivermore.data.service.TabletApiAccessService.TabletApiAccessException;
+import ca.admin.delivermore.data.service.TabletOrderDispatchService;
 
 @RestController
 @RequestMapping("/api/tablet/orders")
@@ -36,16 +37,45 @@ public class TabletOrderApiController {
     private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
     private final StagedRestaurantOrderWorkflowService stagedRestaurantOrderWorkflowService;
     private final StagedRestaurantOrderPayloadProjectionService payloadProjectionService;
+    private final TabletOrderDispatchService tabletOrderDispatchService;
 
     public TabletOrderApiController(
             TabletApiAccessService tabletApiAccessService,
             StagedRestaurantOrderRepository stagedRestaurantOrderRepository,
             StagedRestaurantOrderWorkflowService stagedRestaurantOrderWorkflowService,
-            StagedRestaurantOrderPayloadProjectionService payloadProjectionService) {
+            StagedRestaurantOrderPayloadProjectionService payloadProjectionService,
+            TabletOrderDispatchService tabletOrderDispatchService) {
         this.tabletApiAccessService = tabletApiAccessService;
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.stagedRestaurantOrderWorkflowService = stagedRestaurantOrderWorkflowService;
         this.payloadProjectionService = payloadProjectionService;
+        this.tabletOrderDispatchService = tabletOrderDispatchService;
+    }
+
+    @PostMapping("/register-token")
+    public GenericResult registerToken(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @RequestBody TokenRegistrationRequest request) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        if (request == null || request.registrationToken() == null || request.registrationToken().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "registrationToken is required");
+        }
+
+        tabletOrderDispatchService.registerFcmToken(tabletAsset.getAssetTag(), request.registrationToken());
+        return new GenericResult("token_registered", LocalDateTime.now());
+    }
+
+    @PostMapping("/heartbeat")
+    public GenericResult heartbeat(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @RequestBody(required = false) HeartbeatRequest request) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        tabletOrderDispatchService.recordHeartbeat(
+                tabletAsset.getAssetTag(),
+                request == null ? null : request.appVersion());
+        return new GenericResult("heartbeat_recorded", LocalDateTime.now());
     }
 
     @GetMapping("/pending")
@@ -84,10 +114,22 @@ public class TabletOrderApiController {
 
         try {
             String payload = payloadProjectionService.buildPayloadJson(stagedOrder.getId());
+            tabletOrderDispatchService.markPayloadPulled(stagedOrder.getId(), tabletAsset.getAssetTag());
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(payload);
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage(), ex);
         }
+    }
+
+    @PostMapping("/{stagedOrderId}/ack")
+    public GenericResult acknowledgeOrderNotification(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @PathVariable Long stagedOrderId) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
+        tabletOrderDispatchService.acknowledgePush(stagedOrderId, tabletAsset.getAssetTag());
+        return new GenericResult("acknowledged", LocalDateTime.now());
     }
 
     @PostMapping("/{stagedOrderId}/approve")
@@ -97,8 +139,12 @@ public class TabletOrderApiController {
             @PathVariable Long stagedOrderId) {
         TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
         getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
-        StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.approve(stagedOrderId);
-        return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        try {
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.approve(stagedOrderId);
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
     }
 
     @PostMapping("/{stagedOrderId}/decline")
@@ -109,10 +155,14 @@ public class TabletOrderApiController {
             @RequestBody(required = false) DecisionRequest request) {
         TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
         getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
-        StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.decline(
-                stagedOrderId,
-                request == null ? null : request.reason());
-        return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        try {
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.decline(
+                    stagedOrderId,
+                    request == null ? null : request.reason());
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
     }
 
     @PostMapping("/{stagedOrderId}/cancel")
@@ -123,10 +173,14 @@ public class TabletOrderApiController {
             @RequestBody(required = false) DecisionRequest request) {
         TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
         getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
-        StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.cancel(
-                stagedOrderId,
-                request == null ? null : request.reason());
-        return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        try {
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.cancel(
+                    stagedOrderId,
+                    request == null ? null : request.reason());
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
     }
 
     private TabletAsset authorizeTablet(String assetTag, String apiKey) {
@@ -166,6 +220,15 @@ public class TabletOrderApiController {
     }
 
     public record DecisionRequest(String reason) {
+    }
+
+    public record TokenRegistrationRequest(String registrationToken) {
+    }
+
+    public record HeartbeatRequest(String appVersion) {
+    }
+
+    public record GenericResult(String status, LocalDateTime serverTime) {
     }
 
     public record DecisionResult(

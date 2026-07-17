@@ -117,6 +117,18 @@ public class TabletAssetsView extends VerticalLayout {
 
         grid.addColumn(TabletAsset::getRestaurantName).setHeader("Restaurant / location").setAutoWidth(true).setSortable(true);
 
+        grid.addColumn(new LocalDateTimeRenderer<>(
+            TabletAsset::getLastHeartbeatAt,
+            () -> DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
+            .setHeader("Last heartbeat")
+            .setAutoWidth(true)
+            .setSortable(true);
+
+        grid.addColumn(asset -> safeString(asset.getLastHeartbeatAppVersion()))
+            .setHeader("Tablet app version")
+            .setAutoWidth(true)
+            .setSortable(true);
+
         grid.addComponentColumn(asset -> {
             String notes = asset.getNotes() == null ? "" : asset.getNotes().trim();
             if (notes.isBlank()) {
