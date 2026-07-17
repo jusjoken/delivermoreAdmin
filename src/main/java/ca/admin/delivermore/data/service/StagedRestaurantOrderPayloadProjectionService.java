@@ -76,13 +76,37 @@ public class StagedRestaurantOrderPayloadProjectionService {
                     defaultInt(line.getQuantity()),
                     defaultDouble(line.getUnitPrice()),
                     trimToEmpty(line.getInstructions()),
-                    normalizeCategory(line.getPrimaryTaxationCategory()),
+                    trimToEmpty(line.getPrimaryTaxationCategory()),
                     optionPayloads));
         }
 
         Map<String, Double> taxationRates = new LinkedHashMap<>();
+        Map<String, String> taxationRateNames = new LinkedHashMap<>();
+        Map<String, String> categoryKeyByTaxIdentity = new LinkedHashMap<>();
+        String serviceFeeTaxName = "";
+        double serviceFeeTaxRate = 0d;
+        String deliveryFeeTaxName = "";
+        double deliveryFeeTaxRate = 0d;
         for (StagedRestaurantOrderTaxRate taxRate : taxRates) {
-            taxationRates.put(taxRate.getTaxationCategory(), defaultDouble(taxRate.getRatePercent()));
+            String scope = trimToEmpty(taxRate.getTaxScope());
+            if ("CATEGORY".equalsIgnoreCase(scope)) {
+                String taxName = trimToEmpty(taxRate.getTaxName());
+                double ratePercent = defaultDouble(taxRate.getRatePercent());
+                String identity = buildTaxIdentityKey(taxName, ratePercent);
+                String categoryKey = categoryKeyByTaxIdentity.get(identity);
+                if (categoryKey == null) {
+                    categoryKey = taxName.isEmpty() ? trimToEmpty(taxRate.getTaxationCategory()) : taxName;
+                    categoryKeyByTaxIdentity.put(identity, categoryKey);
+                }
+                taxationRates.put(categoryKey, ratePercent);
+                taxationRateNames.put(categoryKey, taxName);
+            } else if ("SERVICE_FEE".equalsIgnoreCase(scope)) {
+                serviceFeeTaxName = trimToEmpty(taxRate.getTaxName());
+                serviceFeeTaxRate = defaultDouble(taxRate.getRatePercent());
+            } else if ("DELIVERY_FEE".equalsIgnoreCase(scope)) {
+                deliveryFeeTaxName = trimToEmpty(taxRate.getTaxName());
+                deliveryFeeTaxRate = defaultDouble(taxRate.getRatePercent());
+            }
         }
 
         StoredOrderPayload payload = new StoredOrderPayload(
@@ -101,13 +125,18 @@ public class StagedRestaurantOrderPayloadProjectionService {
                 linePayloads,
                 defaultDouble(stagedOrder.getSubtotal()),
                 defaultDouble(stagedOrder.getServiceFee()),
-                defaultDouble(stagedOrder.getGst()),
+                defaultDouble(stagedOrder.getServiceFeeTax()),
                 defaultDouble(stagedOrder.getItemTax()),
                 defaultDouble(stagedOrder.getDeliveryFee()),
                 defaultDouble(stagedOrder.getDeliveryFeeTax()),
                 defaultDouble(stagedOrder.getTip()),
                 defaultDouble(stagedOrder.getTotal()),
-                taxationRates);
+                taxationRates,
+                taxationRateNames,
+                serviceFeeTaxName,
+                serviceFeeTaxRate,
+                deliveryFeeTaxName,
+                deliveryFeeTaxRate);
 
         try {
             return OBJECT_MAPPER.writeValueAsString(payload);
@@ -128,9 +157,10 @@ public class StagedRestaurantOrderPayloadProjectionService {
         return value == null ? "" : value.trim();
     }
 
-    private String normalizeCategory(String value) {
-        String normalized = trimToEmpty(value);
-        return normalized.isEmpty() ? "Food" : normalized;
+    private String buildTaxIdentityKey(String taxName, double ratePercent) {
+        return trimToEmpty(taxName).toLowerCase(java.util.Locale.CANADA)
+                + "|"
+                + String.format(java.util.Locale.CANADA, "%.4f", ratePercent);
     }
 
     private record StoredOrderPayload(
@@ -149,13 +179,18 @@ public class StagedRestaurantOrderPayloadProjectionService {
             List<LineItemPayload> lines,
             double subtotal,
             double serviceFee,
-            double gst,
+            double serviceFeeTax,
             double itemTax,
             double deliveryFee,
             double deliveryFeeTax,
                 double tip,
             double total,
-            Map<String, Double> taxationRates) {
+            Map<String, Double> taxationRates,
+            Map<String, String> taxationRateNames,
+            String serviceFeeTaxName,
+            double serviceFeeTaxRate,
+            String deliveryFeeTaxName,
+            double deliveryFeeTaxRate) {
     }
 
     private record LineItemPayload(

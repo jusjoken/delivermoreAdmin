@@ -20,14 +20,20 @@ import ca.admin.delivermore.collector.data.entity.RestaurantMenuVersion;
 @Service
 public class RestaurantMenuOrderPreviewService {
 
-    public static final double GST_RATE = 0.05d;
     private static final List<String> DEFAULT_TAXATION_CATEGORY_OPTIONS = List.of("Food", "Alcohol");
+
+    public record TaxRateConfig(
+        String taxName,
+        double percentage) {
+    }
 
     public record PreviewData(
             Restaurant restaurant,
             RestaurantMenuVersion menuVersion,
             List<CategoryData> categories,
-            Map<String, Double> taxationRates,
+        Map<String, TaxRateConfig> taxationRates,
+        TaxRateConfig serviceFeeTax,
+        TaxRateConfig deliveryFeeTax,
             double serviceFeeRate,
             double deliveryFee) {
     }
@@ -44,6 +50,7 @@ public class RestaurantMenuOrderPreviewService {
             String name,
             String description,
             double basePrice,
+            String taxationCategory,
             boolean outOfStock,
             Set<String> tags,
             List<SizeData> sizes,
@@ -99,30 +106,40 @@ public class RestaurantMenuOrderPreviewService {
         for (RestaurantMenuCategory category : restaurantMenuEditorService.listCategories(menuVersion.getId())) {
             List<ItemData> items = restaurantMenuEditorService.listItemsForCategory(menuVersion.getId(), category.getId())
                     .stream()
-                    .map(item -> toItemData(menuVersion, item))
+                    .map(item -> toItemData(menuVersion, category, item))
                     .toList();
             categories.add(new CategoryData(category.getId(), category.getName(), category.getDescription(), items));
         }
 
-        Map<String, Double> taxationRates = new LinkedHashMap<>();
+        Map<String, TaxRateConfig> taxationRates = new LinkedHashMap<>();
         for (RestaurantMenuEditorService.TaxationCategoryRate rate : restaurantMenuEditorService
                 .getTaxationCategoryRates(DEFAULT_TAXATION_CATEGORY_OPTIONS)) {
-            if (rate != null && rate.name() != null) {
+            if (rate != null && rate.category() != null) {
                 Double percentage = rate.percentage();
-                taxationRates.put(rate.name(), percentage == null ? 0d : percentage);
+            String taxName = rate.taxName() == null ? "" : rate.taxName();
+            taxationRates.put(rate.category(), new TaxRateConfig(taxName, percentage == null ? 0d : percentage));
             }
         }
+
+        RestaurantMenuEditorService.NamedTaxRate serviceFeeTax = restaurantMenuEditorService.getServiceFeeTaxRate();
+        RestaurantMenuEditorService.NamedTaxRate deliveryFeeTax = restaurantMenuEditorService.getDeliveryFeeTaxRate();
 
         return new PreviewData(
                 restaurant,
                 menuVersion,
                 categories,
                 taxationRates,
+            new TaxRateConfig(
+                serviceFeeTax == null || serviceFeeTax.name() == null ? "" : serviceFeeTax.name(),
+                serviceFeeTax == null || serviceFeeTax.percentage() == null ? 0d : serviceFeeTax.percentage()),
+            new TaxRateConfig(
+                deliveryFeeTax == null || deliveryFeeTax.name() == null ? "" : deliveryFeeTax.name(),
+                deliveryFeeTax == null || deliveryFeeTax.percentage() == null ? 0d : deliveryFeeTax.percentage()),
                 resolveServiceFeeRate(restaurant),
                 resolveDeliveryFee(restaurant));
     }
 
-    private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuItem item) {
+    private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuCategory category, RestaurantMenuItem item) {
         RestaurantMenuEditorService.ItemSettingsSnapshot settings = restaurantMenuEditorService.loadItemSettings(item);
 
         List<SizeData> sizes = restaurantMenuEditorService.listSizesForItem(menuVersion.getId(), item.getId())
@@ -140,20 +157,52 @@ public class RestaurantMenuOrderPreviewService {
                 item.getId(),
                 item.getName(),
                 item.getDescription(),
-            basePrice == null ? 0d : basePrice,
+                basePrice == null ? 0d : basePrice,
+                defaultTaxationCategory(restaurantMenuEditorService.getItemTaxationCategory(item.getId())),
                 settings.outOfStock(),
                 new LinkedHashSet<>(settings.tags()),
                 sizes,
-                loadOptionGroupsForItem(menuVersion.getId(), item.getId()));
+                loadOptionGroupsForItem(menuVersion.getId(), category.getId(), item.getId()));
     }
 
-    private List<OptionGroupData> loadOptionGroupsForItem(Long menuVersionId, Long itemId) {
-        return restaurantMenuEditorService.listOptionGroupsForItem(menuVersionId, itemId).stream()
-                .sorted(Comparator.comparing(RestaurantMenuOptionGroup::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
-                        .thenComparing(RestaurantMenuOptionGroup::getName, Comparator.nullsLast(String::compareToIgnoreCase)))
-                .map(this::toOptionGroupData)
-                .toList();
+    private String defaultTaxationCategory(String value) {
+        if (value == null || value.isBlank()) {
+            return "Food";
+        }
+        return value.trim();
     }
+
+        private List<OptionGroupData> loadOptionGroupsForItem(Long menuVersionId, Long categoryId, Long itemId) {
+        List<RestaurantMenuOptionGroup> inheritedGroups = restaurantMenuEditorService
+            .listOptionGroupsForCategory(menuVersionId, categoryId)
+            .stream()
+            .filter(group -> group.getItemId() == null && group.getItemSizeId() == null)
+            .toList();
+
+        List<RestaurantMenuOptionGroup> itemGroups = restaurantMenuEditorService
+            .listOptionGroupsForItem(menuVersionId, itemId);
+
+        Map<String, RestaurantMenuOptionGroup> mergedByKey = new LinkedHashMap<>();
+        inheritedGroups.forEach(group -> mergedByKey.put(buildGroupIdentityKey(group), group));
+        itemGroups.forEach(group -> mergedByKey.put(buildGroupIdentityKey(group), group));
+
+        return mergedByKey.values().stream()
+            .sorted(Comparator.comparing(RestaurantMenuOptionGroup::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(RestaurantMenuOptionGroup::getName, Comparator.nullsLast(String::compareToIgnoreCase)))
+            .map(this::toOptionGroupData)
+            .toList();
+    }
+
+        private String buildGroupIdentityKey(RestaurantMenuOptionGroup group) {
+        if (group.getSourceGroupId() != null) {
+            return "src:" + group.getSourceGroupId();
+        }
+        return "name:"
+            + (group.getName() == null ? "" : group.getName().trim().toLowerCase())
+            + "|min:" + group.getForceMin()
+            + "|max:" + group.getForceMax()
+            + "|req:" + group.getRequiredSelection();
+        }
 
     private List<OptionGroupData> loadOptionGroupsForItemSize(Long menuVersionId, Long itemSizeId) {
         return restaurantMenuEditorService.listOptionGroupsForItemSize(menuVersionId, itemSizeId).stream()
@@ -200,7 +249,7 @@ public class RestaurantMenuOrderPreviewService {
     }
 
     private double resolveServiceFeeRate(Restaurant restaurant) {
-        Double value = restaurant.getCommissionRate();
+        Double value = restaurant.getServiceFeeRate();
         if (value == null) {
             return 0d;
         }

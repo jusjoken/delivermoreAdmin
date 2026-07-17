@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,6 +31,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.Scroller;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
+import com.vaadin.flow.component.radiobutton.RadioGroupVariant;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
@@ -551,10 +553,11 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private GroupCollector buildSingleSelectCollector(OptionGroupData group, Runnable updateTotals) {
         VerticalLayout wrapper = new VerticalLayout();
         wrapper.setPadding(false);
-        wrapper.setSpacing(true);
+        wrapper.setSpacing(false);
 
         Span groupTitle = new Span(group.name() + labelSuffix(group));
         groupTitle.getStyle().set("font-weight", "600");
+        groupTitle.getStyle().set("margin-bottom", "var(--lumo-space-xs)");
 
         RadioButtonGroup<OptionChoice> choices = new RadioButtonGroup<>();
         List<OptionChoice> items = new ArrayList<>();
@@ -569,6 +572,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         choices.setItemLabelGenerator(choice -> choice.option() == null
                 ? "None"
                 : choice.option().name() + priceSuffix(choice.option().price()));
+        choices.addThemeVariants(RadioGroupVariant.LUMO_VERTICAL);
         choices.addValueChangeListener(event -> updateTotals.run());
 
         if (group.required()) {
@@ -596,10 +600,11 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private GroupCollector buildMultiSelectCollector(OptionGroupData group, Runnable updateTotals) {
         VerticalLayout wrapper = new VerticalLayout();
         wrapper.setPadding(false);
-        wrapper.setSpacing(true);
+        wrapper.setSpacing(false);
 
         Span groupTitle = new Span(group.name() + labelSuffix(group));
         groupTitle.getStyle().set("font-weight", "600");
+        groupTitle.getStyle().set("margin-bottom", "var(--lumo-space-xs)");
         wrapper.add(groupTitle);
 
         List<MultiSelectionRow> rows = new ArrayList<>();
@@ -769,13 +774,21 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         totals.getStyle().set("padding-top", "12px");
 
         totals.add(buildTotalRow("Sub-total", calculateSubTotal()));
+        for (TaxLine taxLine : calculateUsedCategoryTaxLines()) {
+            totals.add(buildTotalRow(formatTaxLineLabel(taxLine.taxName(), taxLine.ratePercent()), taxLine.amount()));
+        }
         totals.add(buildTotalRow("Service fee", calculateServiceFee()));
-        totals.add(buildTotalRow("GST (5%)", calculateGst()));
-        if (calculateCategoryTax() > 0d) {
-            totals.add(buildTotalRow("Tax on items", calculateCategoryTax()));
+        if (calculateServiceFeeTax() > 0d || calculateServiceFee() > 0d) {
+            totals.add(buildTotalRow(
+                      "Service fee tax (" + formatTaxLabel(previewData.serviceFeeTax().taxName(), previewData.serviceFeeTax().percentage()) + ")",
+                    calculateServiceFeeTax()));
         }
         totals.add(buildTotalRow("Delivery fee", calculateDeliveryFee()));
-        totals.add(buildTotalRow("Delivery fee tax (5%)", calculateDeliveryFeeTax()));
+        if (calculateDeliveryFeeTax() > 0d || calculateDeliveryFee() > 0d) {
+            totals.add(buildTotalRow(
+                      "Delivery fee tax (" + formatTaxLabel(previewData.deliveryFeeTax().taxName(), previewData.deliveryFeeTax().percentage()) + ")",
+                    calculateDeliveryFeeTax()));
+        }
         if (isOnlinePaymentMethod(checkoutState.paymentMethod) || calculateTipAmount() > 0d) {
             totals.add(buildTotalRow("Tip", calculateTipAmount()));
         }
@@ -1084,21 +1097,17 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return roundCurrency(calculateSubTotal() * previewData.serviceFeeRate());
     }
 
-    private double calculateGst() {
-        return roundCurrency(calculateSubTotal() * RestaurantMenuOrderPreviewService.GST_RATE);
+    private double calculateCategoryTax() {
+        return roundCurrency(calculateUsedCategoryTaxLines().stream().mapToDouble(TaxLine::amount).sum());
     }
 
-    private double calculateCategoryTax() {
-        double total = 0d;
-        for (OrderLine line : cartLines) {
-            String taxCategory = line.primaryTaxCategory();
-            if (taxCategory == null) {
-                continue;
-            }
-            double pct = previewData.taxationRates().getOrDefault(taxCategory, 0d);
-            total += line.totalPrice() * (pct / 100d);
+    private double calculateServiceFeeTax() {
+        double serviceFee = calculateServiceFee();
+        double rate = previewData.serviceFeeTax().percentage();
+        if (serviceFee <= 0d || rate <= 0d) {
+            return 0d;
         }
-        return roundCurrency(total);
+        return roundCurrency(serviceFee * (rate / 100d));
     }
 
     private double calculateDeliveryFee() {
@@ -1106,16 +1115,169 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     }
 
     private double calculateDeliveryFeeTax() {
-        return roundCurrency(calculateDeliveryFee() * RestaurantMenuOrderPreviewService.GST_RATE);
+        double deliveryFee = calculateDeliveryFee();
+        double rate = previewData.deliveryFeeTax().percentage();
+        if (deliveryFee <= 0d || rate <= 0d) {
+            return 0d;
+        }
+        return roundCurrency(deliveryFee * (rate / 100d));
     }
 
     private double calculateTipBaseTotal() {
         return roundCurrency(calculateSubTotal()
                 + calculateServiceFee()
-                + calculateGst()
                 + calculateCategoryTax()
+                + calculateServiceFeeTax()
                 + calculateDeliveryFee()
                 + calculateDeliveryFeeTax());
+    }
+
+    private List<TaxLine> calculateUsedCategoryTaxLines() {
+        Map<String, Double> taxByCategory = new LinkedHashMap<>();
+        for (OrderLine line : cartLines) {
+            double lineSubtotal = line.totalPrice();
+            double optionSubtotalTotal = 0d;
+
+            for (SelectedOptionLine selection : line.selections()) {
+                double optionSubtotal = roundCurrency(selection.unitPrice() * selection.quantity() * line.quantity());
+                if (optionSubtotal > 0d) {
+                    optionSubtotalTotal = roundCurrency(optionSubtotalTotal + optionSubtotal);
+                }
+
+                String optionCategory = normalizeTaxationCategory(resolveSelectionTaxationCategory(line, selection));
+                if (optionCategory.isEmpty()) {
+                    continue;
+                }
+
+                Map.Entry<String, RestaurantMenuOrderPreviewService.TaxRateConfig> optionRate =
+                        findTaxRateEntry(previewData.taxationRates(), optionCategory);
+                if (optionRate == null || optionRate.getValue().percentage() <= 0d || optionSubtotal <= 0d) {
+                    continue;
+                }
+
+                double optionTax = roundCurrency(optionSubtotal * (optionRate.getValue().percentage() / 100d));
+                taxByCategory.merge(optionRate.getKey(), optionTax, Double::sum);
+            }
+
+            double baseSubtotal = roundCurrency(lineSubtotal - optionSubtotalTotal);
+            String baseCategory = normalizeTaxationCategory(line.primaryTaxCategory());
+            if (baseSubtotal > 0d && !baseCategory.isEmpty()) {
+                Map.Entry<String, RestaurantMenuOrderPreviewService.TaxRateConfig> baseRate =
+                        findTaxRateEntry(previewData.taxationRates(), baseCategory);
+                if (baseRate != null && baseRate.getValue().percentage() > 0d) {
+                    double baseTax = roundCurrency(baseSubtotal * (baseRate.getValue().percentage() / 100d));
+                    taxByCategory.merge(baseRate.getKey(), baseTax, Double::sum);
+                }
+            }
+        }
+
+        Map<String, TaxLine> mergedByTaxIdentity = new LinkedHashMap<>();
+        for (Map.Entry<String, Double> entry : taxByCategory.entrySet()) {
+            RestaurantMenuOrderPreviewService.TaxRateConfig config = previewData.taxationRates().get(entry.getKey());
+            if (config == null) {
+                continue;
+            }
+            String identity = buildTaxIdentityKey(config.taxName(), config.percentage());
+            TaxLine existing = mergedByTaxIdentity.get(identity);
+            if (existing == null) {
+                mergedByTaxIdentity.put(identity,
+                        new TaxLine(config.taxName(), config.percentage(), roundCurrency(entry.getValue())));
+                continue;
+            }
+            mergedByTaxIdentity.put(identity,
+                    new TaxLine(
+                            existing.taxName(),
+                            existing.ratePercent(),
+                            roundCurrency(existing.amount() + entry.getValue())));
+        }
+        return new ArrayList<>(mergedByTaxIdentity.values());
+    }
+
+    private String buildTaxIdentityKey(String taxName, double percentage) {
+        String name = taxName == null ? "" : taxName.trim().toLowerCase(Locale.CANADA);
+        return name + "|" + String.format(Locale.CANADA, "%.4f", roundCurrency(percentage));
+    }
+
+    private String normalizeTaxationCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return "";
+        }
+        return category.trim();
+    }
+
+    private String resolveSelectionTaxationCategory(OrderLine line, SelectedOptionLine selection) {
+        String direct = normalizeTaxationCategory(selection.taxationCategory());
+        if (!direct.isEmpty()) {
+            return direct;
+        }
+
+        List<OptionGroupData> candidates = new ArrayList<>();
+        if (line.item() != null && line.item().optionGroups() != null) {
+            candidates.addAll(line.item().optionGroups());
+        }
+        if (line.selectedSize() != null && line.selectedSize().optionGroups() != null) {
+            candidates.addAll(line.selectedSize().optionGroups());
+        }
+
+        OptionGroupData fallbackGroupMatch = null;
+        for (OptionGroupData group : candidates) {
+            if (group == null || group.name() == null) {
+                continue;
+            }
+            if (!group.name().equalsIgnoreCase(selection.groupName())) {
+                continue;
+            }
+            if (fallbackGroupMatch == null) {
+                fallbackGroupMatch = group;
+            }
+            boolean optionMatches = group.options().stream()
+                    .filter(option -> option != null && option.name() != null)
+                    .anyMatch(option -> option.name().equalsIgnoreCase(selection.optionName()));
+            if (optionMatches) {
+                return normalizeTaxationCategory(group.taxationCategory());
+            }
+        }
+
+        if (fallbackGroupMatch != null) {
+            return normalizeTaxationCategory(fallbackGroupMatch.taxationCategory());
+        }
+        return "";
+    }
+
+    private Map.Entry<String, RestaurantMenuOrderPreviewService.TaxRateConfig> findTaxRateEntry(
+            Map<String, RestaurantMenuOrderPreviewService.TaxRateConfig> taxationRates,
+            String category) {
+        if (taxationRates == null || category == null || category.isBlank()) {
+            return null;
+        }
+        RestaurantMenuOrderPreviewService.TaxRateConfig exact = taxationRates.get(category);
+        if (exact != null) {
+            return Map.entry(category, exact);
+        }
+        for (Map.Entry<String, RestaurantMenuOrderPreviewService.TaxRateConfig> entry : taxationRates.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(category)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private String formatTaxLineLabel(String taxName, double percentage) {
+        return formatTaxLabel(taxName, percentage);
+    }
+
+    private String formatTaxLabel(String taxName, double percentage) {
+        String normalizedName = taxName == null ? "" : taxName.trim();
+        String rate = formatPercent(percentage);
+        if (normalizedName.isEmpty()) {
+            return rate;
+        }
+        return normalizedName + " (" + rate + ")";
+    }
+
+    private String formatPercent(double percentage) {
+        String value = String.format(java.util.Locale.CANADA, "%.2f", percentage).replaceAll("\\.?0+$", "");
+        return value + "%";
     }
 
     private double calculateTipAmount() {
@@ -1258,6 +1420,9 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             java.util.function.Supplier<Optional<String>> validate) {
     }
 
+        private record TaxLine(String taxName, double ratePercent, double amount) {
+        }
+
     private static final class OrderLine {
         private final ItemData item;
         private final SizeData selectedSize;
@@ -1313,11 +1478,11 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         }
 
         private String primaryTaxCategory() {
-            return selections.stream()
-                    .map(SelectedOptionLine::taxationCategory)
-                    .filter(value -> value != null && !value.isBlank())
-                    .findFirst()
-                    .orElse("Food");
+            String category = item == null ? null : item.taxationCategory();
+            if (category == null || category.isBlank()) {
+                return "Food";
+            }
+            return category.trim();
         }
     }
 

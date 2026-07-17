@@ -82,6 +82,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private TextField dialogRestExpiryDate = new TextField("Expiry Date");
     private IntegerField dialogRestCommission = UIUtilities.getPercentageField("Commission",false);
     private IntegerField dialogRestCommissionPhonein = UIUtilities.getPercentageField("Phonein Commission", false);
+    private NumberField dialogRestServiceFeePercent = UIUtilities.getNumberField("Service Fee", false, "");
 
     private NumberField dialogRestCommPerDelivery = UIUtilities.getNumberField("Per Delivery", false, "$");
     private NumberField dialogRestCommPerPhonin = UIUtilities.getNumberField("Per Phonein", false, "$");
@@ -181,6 +182,9 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.addColumn(item -> {
             return getCommissionFormatted(item.getCommissionRatePhonein());
         }).setHeader("Phonein Commission").setTextAlign(ColumnTextAlign.END);
+        grid.addColumn(item -> {
+            return getServiceFeeFormatted(item.getServiceFeeRate());
+        }).setHeader("Service Fee %").setTextAlign(ColumnTextAlign.END);
         grid.addColumn(Restaurant::getDateEffective).setHeader("Effective");
         grid.addColumn(item -> {
             if(item.getDateExpired()==null) return "";
@@ -334,6 +338,15 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         return getDoubleAsInteger(rate) + "%";
     }
 
+    private String getServiceFeeFormatted(Double rate){
+        if(rate == null || rate.equals(0.0)) {
+            return "";
+        }
+        double percentage = rate * 100d;
+        String value = String.format("%.2f", percentage).replaceAll("\\.?0+$", "");
+        return value + "%";
+    }
+
     private HorizontalLayout getToolbar(){
         HorizontalLayout toolbar = UIUtilities.getHorizontalLayout(true,true,false );
         toolbar.setAlignItems(FlexComponent.Alignment.BASELINE);
@@ -388,6 +401,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                     }
                     newRest.setCommissionRate(0.15);
                     newRest.setCommissionRatePhonein(0.15);
+                    newRest.setServiceFeeRate(0.0);
                     newRest.setCommissionPerPhonein(0.0);
                     newRest.setCommissionPerDelivery(0.0);
                     newRest.setDeliveryFee(0.0);
@@ -590,8 +604,24 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestCommissionPhonein.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
-        HorizontalLayout commissionFieldsLayout = UIUtilities.getHorizontalLayout(false,true,false);
-        commissionFieldsLayout.add(dialogRestCommission,dialogRestCommissionPhonein);
+        dialogRestServiceFeePercent.setReadOnly(false);
+        dialogRestServiceFeePercent.addThemeVariants(TextFieldVariant.LUMO_SMALL);
+        dialogRestServiceFeePercent.setWidth(halfFieldWidth);
+        dialogRestServiceFeePercent.setMin(0);
+        dialogRestServiceFeePercent.setStep(0.01);
+        dialogRestServiceFeePercent.setValue(0.0);
+        dialogRestServiceFeePercent.setSuffixComponent(new Span("%"));
+        dialogRestServiceFeePercent.addValueChangeListener(e -> {
+            if(validationEnabled) dialogValidate();
+        });
+        FormLayout commissionFieldsLayout = new FormLayout();
+        commissionFieldsLayout.setWidthFull();
+        commissionFieldsLayout.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("34em", 2),
+            new FormLayout.ResponsiveStep("48em", 3)
+        );
+        commissionFieldsLayout.add(dialogRestCommission,dialogRestCommissionPhonein,dialogRestServiceFeePercent);
 
         dialogRestCommPerDelivery.setReadOnly(false);
         dialogRestCommPerDelivery.addThemeVariants(TextFieldVariant.LUMO_SMALL);
@@ -770,6 +800,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             dialogRestCommissionPhonein.setValue(getDoubleAsInteger(selectedRestaurant.getCommissionRatePhonein()));
         }
+        if(selectedRestaurant.getServiceFeeRate()==null){
+            dialogRestServiceFeePercent.setValue(0.0);
+        }else{
+            dialogRestServiceFeePercent.setValue(getRateAsPercentValue(selectedRestaurant.getServiceFeeRate()));
+        }
 
         if(selectedRestaurant.getCommissionPerDelivery()==null){
             dialogRestCommPerDelivery.setValue(0.0);
@@ -843,6 +878,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateTeam(dialogRestLocation,locationChoice.getLocationTeamById(selectedRestaurant.getTeamId()));
                 validateIntegerField(dialogRestCommission, getDoubleAsInteger(selectedRestaurant.getCommissionRate()));
                 validateIntegerField(dialogRestCommissionPhonein, getDoubleAsInteger(selectedRestaurant.getCommissionRatePhonein()));
+                validateField(dialogRestServiceFeePercent, getRateAsPercentValue(selectedRestaurant.getServiceFeeRate()));
                 validateField(dialogRestCommPerDelivery,selectedRestaurant.getCommissionPerDelivery());
                 validateField(dialogRestCommPerPhonin,selectedRestaurant.getCommissionPerPhonein());
                 validateField(dialogRestDeliveryFee,selectedRestaurant.getDeliveryFee());
@@ -987,6 +1023,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             selectedRestaurant.setCommissionRatePhonein(getIntegerAsDouble(dialogRestCommissionPhonein.getValue()));
         }
+        if(dialogRestServiceFeePercent.getValue()==null || dialogRestServiceFeePercent.getValue().equals(0.0)){
+            selectedRestaurant.setServiceFeeRate(0.0);
+        }else{
+            selectedRestaurant.setServiceFeeRate(getPercentAsRateValue(dialogRestServiceFeePercent.getValue()));
+        }
         if(dialogRestCommPerDelivery.getValue()==null){
             selectedRestaurant.setCommissionPerDelivery(0.0);
         }else{
@@ -1065,6 +1106,16 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         if(value==null) return newDouble;
         newDouble = value * 0.01;
         return newDouble;
+    }
+
+    private Double getRateAsPercentValue(Double value){
+        if(value==null) return 0.0;
+        return value * 100d;
+    }
+
+    private Double getPercentAsRateValue(Double percentageValue){
+        if(percentageValue==null) return 0.0;
+        return percentageValue * 0.01d;
     }
 
     @Override

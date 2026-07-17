@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -69,8 +70,11 @@ public class RestaurantMenuEditorService {
             Map<String, String> nutritionalValues) {
     }
 
-        public record TaxationCategoryRate(String name, Double percentage) {
-        }
+    public record TaxationCategoryRate(String category, String taxName, Double percentage) {
+    }
+
+    public record NamedTaxRate(String name, Double percentage) {
+    }
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String MENU_EDITOR_SETTINGS_SECTION = "menu_editor";
@@ -78,6 +82,9 @@ public class RestaurantMenuEditorService {
     private static final String ITEM_ALLERGEN_OPTIONS_SETTING = "item_allergen_options";
     private static final String MAJOR_GROUP_OPTIONS_SETTING = "major_group_options";
     private static final String TAXATION_CATEGORY_OPTIONS_SETTING = "taxation_category_options";
+    private static final String SERVICE_FEE_TAX_SETTING = "service_fee_tax";
+    private static final String DELIVERY_FEE_TAX_SETTING = "delivery_fee_tax";
+    private static final String ITEM_TAXATION_CATEGORY_SETTING_PREFIX = "item_taxation_category_";
     private static final String OPTION_GROUP_MAJOR_GROUP_SETTING_PREFIX = "option_group_major_group_";
     private static final String OPTION_GROUP_TAXATION_CATEGORY_SETTING_PREFIX = "option_group_taxation_category_";
 
@@ -144,49 +151,69 @@ public class RestaurantMenuEditorService {
 
     public List<String> getTaxationCategoryOptions(List<String> defaults) {
         return getTaxationCategoryRates(defaults).stream()
-                .map(TaxationCategoryRate::name)
+                .map(TaxationCategoryRate::category)
                 .toList();
+    }
+
+    public NamedTaxRate getServiceFeeTaxRate() {
+        return getNamedTaxRateSetting(SERVICE_FEE_TAX_SETTING);
+    }
+
+    public NamedTaxRate getDeliveryFeeTaxRate() {
+        return getNamedTaxRateSetting(DELIVERY_FEE_TAX_SETTING);
     }
 
     public List<TaxationCategoryRate> getTaxationCategoryRates(List<String> defaults) {
         SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, TAXATION_CATEGORY_OPTIONS_SETTING);
         if (setting == null || setting.getValueAsList().isEmpty()) {
             return defaults.stream()
-                    .map(value -> new TaxationCategoryRate(value, 0d))
+                    .map(value -> new TaxationCategoryRate(value, "", 0d))
                     .toList();
         }
 
         LinkedHashMap<String, Double> byName = new LinkedHashMap<>();
+        LinkedHashMap<String, String> taxNameByCategory = new LinkedHashMap<>();
         for (String raw : setting.getValueAsList()) {
             TaxationCategoryRate parsed = parseTaxationCategoryRate(raw);
-            if (parsed == null || parsed.name() == null) {
+            if (parsed == null || parsed.category() == null) {
                 continue;
             }
             Double pct = parsed.percentage();
+            String taxName = parsed.taxName() == null ? "" : parsed.taxName();
             if (pct == null) {
-                byName.putIfAbsent(parsed.name(), 0d);
+                byName.putIfAbsent(parsed.category(), 0d);
             } else {
-                byName.putIfAbsent(parsed.name(), pct);
+                byName.putIfAbsent(parsed.category(), pct);
             }
+            taxNameByCategory.putIfAbsent(parsed.category(), taxName);
         }
 
         if (byName.isEmpty()) {
             return defaults.stream()
-                    .map(value -> new TaxationCategoryRate(value, 0d))
+                    .map(value -> new TaxationCategoryRate(value, "", 0d))
                     .toList();
         }
 
         return byName.entrySet().stream()
-                .map(entry -> new TaxationCategoryRate(entry.getKey(), entry.getValue()))
+                .map(entry -> new TaxationCategoryRate(
+                        entry.getKey(),
+                        taxNameByCategory.getOrDefault(entry.getKey(), ""),
+                        entry.getValue()))
                 .toList();
     }
 
     public String getOptionGroupMajorGroup(Long optionGroupId) {
-        return getStringSetting(optionGroupMajorGroupSettingName(optionGroupId));
+        Long canonicalGroupId = resolveCanonicalOptionGroupId(optionGroupId);
+        return getStringSetting(optionGroupMajorGroupSettingName(canonicalGroupId));
     }
 
     public String getOptionGroupTaxationCategory(Long optionGroupId) {
-        return getStringSetting(optionGroupTaxationCategorySettingName(optionGroupId));
+        Long canonicalGroupId = resolveCanonicalOptionGroupId(optionGroupId);
+        return getStringSetting(optionGroupTaxationCategorySettingName(canonicalGroupId));
+    }
+
+    public String getItemTaxationCategory(Long itemId) {
+        return getStringSetting(itemTaxationCategorySettingName(itemId));
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -207,17 +234,61 @@ public class RestaurantMenuEditorService {
 
     @org.springframework.transaction.annotation.Transactional
     public void saveOptionGroupMajorGroup(Long optionGroupId, String value) {
+        RestaurantMenuOptionGroup group = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId).orElse(null);
+        Long canonicalGroupId = resolveCanonicalOptionGroupId(optionGroupId);
         saveStringSetting(
-                optionGroupMajorGroupSettingName(optionGroupId),
+                optionGroupMajorGroupSettingName(canonicalGroupId),
                 "Menu editor choice-group major group value",
                 value);
+
+        if (group == null || group.getMenuVersionId() == null || group.getSourceGroupId() == null) {
+            return;
+        }
+
+        List<RestaurantMenuOptionGroup> siblings = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndSourceGroupId(group.getMenuVersionId(), group.getSourceGroupId());
+        for (RestaurantMenuOptionGroup sibling : siblings) {
+            if (sibling.getId() == null || sibling.getId().equals(canonicalGroupId)) {
+                continue;
+            }
+            saveStringSetting(
+                    optionGroupMajorGroupSettingName(sibling.getId()),
+                    "Menu editor choice-group major group value",
+                    value);
+        }
     }
 
     @org.springframework.transaction.annotation.Transactional
     public void saveOptionGroupTaxationCategory(Long optionGroupId, String value) {
+        RestaurantMenuOptionGroup group = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId).orElse(null);
+        Long canonicalGroupId = resolveCanonicalOptionGroupId(optionGroupId);
         saveStringSetting(
-                optionGroupTaxationCategorySettingName(optionGroupId),
+            optionGroupTaxationCategorySettingName(canonicalGroupId),
                 "Menu editor choice-group taxation category value",
+                value);
+
+        if (group == null || group.getMenuVersionId() == null || group.getSourceGroupId() == null) {
+            return;
+        }
+
+        List<RestaurantMenuOptionGroup> siblings = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndSourceGroupId(group.getMenuVersionId(), group.getSourceGroupId());
+        for (RestaurantMenuOptionGroup sibling : siblings) {
+            if (sibling.getId() == null || sibling.getId().equals(canonicalGroupId)) {
+                continue;
+            }
+            saveStringSetting(
+                    optionGroupTaxationCategorySettingName(sibling.getId()),
+                    "Menu editor choice-group taxation category value",
+                    value);
+        }
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveItemTaxationCategory(Long itemId, String value) {
+        saveStringSetting(
+                itemTaxationCategorySettingName(itemId),
+                "Menu editor standalone-item taxation category value",
                 value);
     }
 
@@ -234,30 +305,49 @@ public class RestaurantMenuEditorService {
         List<TaxationCategoryRate> mapped = values == null
                 ? List.of()
                 : values.stream()
-                        .map(value -> new TaxationCategoryRate(value, 0d))
+                        .map(value -> new TaxationCategoryRate(value, "", 0d))
                         .toList();
         saveTaxationCategoryRates(mapped);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveServiceFeeTaxRate(NamedTaxRate value) {
+        saveNamedTaxRateSetting(
+                SERVICE_FEE_TAX_SETTING,
+                "Tax configuration for service fee",
+                value);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveDeliveryFeeTaxRate(NamedTaxRate value) {
+        saveNamedTaxRateSetting(
+                DELIVERY_FEE_TAX_SETTING,
+                "Tax configuration for delivery fee",
+                value);
     }
 
     @org.springframework.transaction.annotation.Transactional
     public void saveTaxationCategoryRates(List<TaxationCategoryRate> values) {
         List<String> encoded = new ArrayList<>();
         if (values != null) {
-            LinkedHashMap<String, Double> deduped = new LinkedHashMap<>();
+            LinkedHashMap<String, TaxationCategoryRate> deduped = new LinkedHashMap<>();
             for (TaxationCategoryRate value : values) {
                 if (value == null) {
                     continue;
                 }
-                String name = trimToNull(value.name());
-                if (name == null) {
+                String category = trimToNull(value.category());
+                if (category == null) {
                     continue;
                 }
+                String taxName = trimToNull(value.taxName());
                 Double pct = value.percentage();
                 double normalizedPct = pct == null ? 0d : pct;
-                deduped.putIfAbsent(name, normalizedPct);
+                deduped.putIfAbsent(
+                        category,
+                        new TaxationCategoryRate(category, taxName == null ? "" : taxName, normalizedPct));
             }
-            for (Map.Entry<String, Double> entry : deduped.entrySet()) {
-                encoded.add(entry.getKey() + "|" + entry.getValue());
+            for (TaxationCategoryRate entry : deduped.values()) {
+                encoded.add(entry.category() + "|" + entry.taxName() + "|" + entry.percentage());
             }
         }
 
@@ -273,25 +363,78 @@ public class RestaurantMenuEditorService {
             return null;
         }
 
-        int separator = cleaned.lastIndexOf('|');
-        if (separator <= 0 || separator >= cleaned.length() - 1) {
-            return new TaxationCategoryRate(cleaned, 0d);
+        String[] tokens = cleaned.split("\\|", -1);
+        if (tokens.length == 3) {
+            String category = trimToNull(tokens[0]);
+            String taxName = trimToNull(tokens[1]);
+            String rateText = trimToNull(tokens[2]);
+            if (category == null) {
+                return null;
+            }
+            return new TaxationCategoryRate(category, taxName == null ? "" : taxName, parseRate(rateText));
         }
 
-        String name = trimToNull(cleaned.substring(0, separator));
-        String rateText = trimToNull(cleaned.substring(separator + 1));
-        if (name == null) {
-            return null;
+        if (tokens.length == 2) {
+            String category = trimToNull(tokens[0]);
+            String rateText = trimToNull(tokens[1]);
+            if (category == null) {
+                return null;
+            }
+            return new TaxationCategoryRate(category, "", parseRate(rateText));
         }
+
+        return new TaxationCategoryRate(cleaned, "", 0d);
+    }
+
+    private double parseRate(String rateText) {
         if (rateText == null) {
-            return new TaxationCategoryRate(name, 0d);
+            return 0d;
         }
 
         try {
-            return new TaxationCategoryRate(name, Double.valueOf(rateText));
+            return Double.parseDouble(rateText);
         } catch (NumberFormatException ignored) {
-            return new TaxationCategoryRate(cleaned, 0d);
+            return 0d;
         }
+    }
+
+    private NamedTaxRate getNamedTaxRateSetting(String settingName) {
+        SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, settingName);
+        String encoded = setting == null ? null : trimToNull(setting.getValue());
+        if (encoded == null) {
+            return new NamedTaxRate("", 0d);
+        }
+
+        String[] tokens = encoded.split("\\|", -1);
+        if (tokens.length != 2) {
+            return new NamedTaxRate("", 0d);
+        }
+
+        String name = trimToNull(tokens[0]);
+        double percentage = parseRate(trimToNull(tokens[1]));
+        return new NamedTaxRate(name == null ? "" : name, percentage);
+    }
+
+    private void saveNamedTaxRateSetting(String settingName, String description, NamedTaxRate value) {
+        SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, settingName);
+        if (setting == null) {
+            setting = new SettingEntity();
+            setting.setSection(MENU_EDITOR_SETTINGS_SECTION);
+            setting.setName(settingName);
+            setting.setDescription(description);
+            setting.setValueType(SettingEntity.ValueType.STRING);
+        }
+
+        String taxName = value == null ? "" : trimToNull(value.name());
+        double percentage = 0d;
+        if (value != null) {
+            Double percentValue = value.percentage();
+            if (percentValue != null) {
+                percentage = percentValue;
+            }
+        }
+        setting.setValue((taxName == null ? "" : taxName) + "|" + percentage);
+        settingRepository.save(setting);
     }
 
     private List<String> getListSetting(String settingName, List<String> defaults) {
@@ -366,8 +509,35 @@ public class RestaurantMenuEditorService {
         return OPTION_GROUP_MAJOR_GROUP_SETTING_PREFIX + optionGroupId;
     }
 
+    private String itemTaxationCategorySettingName(Long itemId) {
+        return ITEM_TAXATION_CATEGORY_SETTING_PREFIX + itemId;
+    }
+
     private String optionGroupTaxationCategorySettingName(Long optionGroupId) {
         return OPTION_GROUP_TAXATION_CATEGORY_SETTING_PREFIX + optionGroupId;
+    }
+
+    private Long resolveCanonicalOptionGroupId(Long optionGroupId) {
+        if (optionGroupId == null) {
+            return null;
+        }
+
+        RestaurantMenuOptionGroup group = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId).orElse(null);
+        if (group == null || group.getMenuVersionId() == null || group.getSourceGroupId() == null) {
+            return optionGroupId;
+        }
+
+        List<RestaurantMenuOptionGroup> siblings = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndSourceGroupId(group.getMenuVersionId(), group.getSourceGroupId());
+
+        return siblings.stream()
+                .filter(sibling -> sibling.getId() != null)
+                .sorted(Comparator
+                        .comparing((RestaurantMenuOptionGroup sibling) -> sibling.getItemId() != null || sibling.getItemSizeId() != null)
+                        .thenComparing(RestaurantMenuOptionGroup::getId))
+                .map(RestaurantMenuOptionGroup::getId)
+                .findFirst()
+                .orElse(optionGroupId);
     }
 
     public Restaurant getRestaurant(Long restaurantId) {
@@ -534,12 +704,15 @@ public class RestaurantMenuEditorService {
         copy.setExtrasJson(null);
         copy.setDisplayOrder(nextDisplayOrder);
 
-        return saveItemWithSettings(
+        RestaurantMenuItem duplicated = saveItemWithSettings(
             copy,
             sourceSettings.tags(),
             sourceSettings.allergens(),
             sourceSettings.nutritionalSize(),
             sourceSettings.nutritionalValues());
+
+        saveItemTaxationCategory(duplicated.getId(), getItemTaxationCategory(source.getId()));
+        return duplicated;
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -578,6 +751,11 @@ public class RestaurantMenuEditorService {
 
     public List<RestaurantMenuOptionGroup> listOptionGroupsForItem(Long menuVersionId, Long itemId) {
         return restaurantMenuOptionGroupEditorRepository.findByMenuVersionIdAndItemIdOrderByDisplayOrderAscNameAsc(menuVersionId, itemId);
+    }
+
+    public List<RestaurantMenuOptionGroup> listOptionGroupsForCategory(Long menuVersionId, Long categoryId) {
+        return restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndCategoryIdOrderByDisplayOrderAscNameAsc(menuVersionId, categoryId);
     }
 
     public List<RestaurantMenuOptionGroup> listOptionGroupsForItemSize(Long menuVersionId, Long itemSizeId) {
@@ -811,8 +989,96 @@ public class RestaurantMenuEditorService {
             replaceOptionNutrition(savedOption, optionSettings.nutritionalValues());
         }
 
+        saveOptionGroupMajorGroup(savedGroup.getId(), getOptionGroupMajorGroup(templateGroupId));
+        saveOptionGroupTaxationCategory(savedGroup.getId(), getOptionGroupTaxationCategory(templateGroupId));
+
         return true;
     }
+
+        @org.springframework.transaction.annotation.Transactional
+        public boolean attachOptionGroupToCategory(Long menuVersionId, Long categoryId, Long templateGroupId) {
+        RestaurantMenuOptionGroup templateGroup = restaurantMenuOptionGroupEditorRepository.findById(templateGroupId)
+            .orElseThrow(() -> new IllegalStateException("Choice group not found: " + templateGroupId));
+
+        if (!menuVersionId.equals(templateGroup.getMenuVersionId())) {
+            throw new IllegalStateException("Choice group belongs to a different menu version");
+        }
+
+        RestaurantMenuCategory category = restaurantMenuCategoryEditorRepository.findById(categoryId)
+            .orElseThrow(() -> new IllegalStateException("Category not found: " + categoryId));
+
+        if (!menuVersionId.equals(category.getMenuVersionId())) {
+            throw new IllegalStateException("Category belongs to a different menu version");
+        }
+
+        List<RestaurantMenuOptionGroup> existingGroups =
+            restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndCategoryIdOrderByDisplayOrderAscNameAsc(menuVersionId, categoryId)
+                .stream()
+                .filter(group -> group.getItemId() == null && group.getItemSizeId() == null)
+                .toList();
+        String templateKey = buildGroupUniqKey(templateGroup);
+        boolean alreadyLinked = existingGroups.stream()
+            .anyMatch(group -> buildGroupUniqKey(group).equals(templateKey));
+        if (alreadyLinked) {
+            return false;
+        }
+
+        int nextDisplayOrder = existingGroups.stream()
+            .map(RestaurantMenuOptionGroup::getDisplayOrder)
+            .filter(order -> order != null)
+            .max(Integer::compareTo)
+            .orElse(0) + 1;
+
+        RestaurantMenuOptionGroup newGroup = new RestaurantMenuOptionGroup();
+        newGroup.setMenuVersionId(menuVersionId);
+        newGroup.setCategoryId(categoryId);
+        newGroup.setItemId(null);
+        newGroup.setItemSizeId(null);
+        newGroup.setSourceGroupId(templateGroup.getSourceGroupId() != null
+            ? templateGroup.getSourceGroupId()
+            : templateGroup.getId());
+        newGroup.setSourceMenuId(templateGroup.getSourceMenuId());
+        newGroup.setName(templateGroup.getName());
+        newGroup.setRequiredSelection(templateGroup.getRequiredSelection());
+        newGroup.setAllowQuantity(templateGroup.getAllowQuantity());
+        newGroup.setForceMin(templateGroup.getForceMin());
+        newGroup.setForceMax(templateGroup.getForceMax());
+        newGroup.setDisplayOrder(nextDisplayOrder);
+
+        RestaurantMenuOptionGroup savedGroup = restaurantMenuOptionGroupEditorRepository.save(newGroup);
+
+        List<RestaurantMenuOption> templateOptions =
+            restaurantMenuOptionEditorRepository.findByOptionGroupIdOrderByDisplayOrderAscNameAsc(templateGroupId);
+        for (RestaurantMenuOption templateOption : templateOptions) {
+            OptionSettingsSnapshot optionSettings = loadOptionSettings(templateOption);
+            RestaurantMenuOption newOption = new RestaurantMenuOption();
+            newOption.setMenuVersionId(menuVersionId);
+            newOption.setOptionGroupId(savedGroup.getId());
+            newOption.setSourceOptionId(templateOption.getSourceOptionId() != null
+                ? templateOption.getSourceOptionId()
+                : templateOption.getId());
+            newOption.setSourceGroupId(savedGroup.getSourceGroupId());
+            newOption.setName(templateOption.getName());
+            newOption.setPrice(templateOption.getPrice());
+            newOption.setDefaultOption(templateOption.getDefaultOption());
+            newOption.setOutOfStock(optionSettings.outOfStock());
+            newOption.setIngredients(optionSettings.ingredients());
+            newOption.setAdditives(optionSettings.additives());
+            newOption.setNutritionalValuesSize(optionSettings.nutritionalSize());
+            newOption.setExtrasJson(null);
+            newOption.setDisplayOrder(templateOption.getDisplayOrder());
+            RestaurantMenuOption savedOption = restaurantMenuOptionEditorRepository.save(newOption);
+            replaceOptionTags(savedOption, optionSettings.tags());
+            replaceOptionAllergens(savedOption, optionSettings.allergens());
+            replaceOptionNutrition(savedOption, optionSettings.nutritionalValues());
+        }
+
+        saveOptionGroupMajorGroup(savedGroup.getId(), getOptionGroupMajorGroup(templateGroupId));
+        saveOptionGroupTaxationCategory(savedGroup.getId(), getOptionGroupTaxationCategory(templateGroupId));
+
+        return true;
+        }
 
     @org.springframework.transaction.annotation.Transactional
     public boolean removeOptionGroupFromItem(Long menuVersionId, Long itemId, Long optionGroupId) {
@@ -823,6 +1089,30 @@ public class RestaurantMenuEditorService {
         }
         if (!menuVersionId.equals(group.getMenuVersionId()) || !itemId.equals(group.getItemId())) {
             throw new IllegalStateException("Choice group is not linked to this item");
+        }
+
+        List<RestaurantMenuOption> options = restaurantMenuOptionEditorRepository
+                .findByOptionGroupIdOrderByDisplayOrderAscNameAsc(optionGroupId);
+        for (RestaurantMenuOption option : options) {
+            deleteOptionSettings(option.getId());
+        }
+        restaurantMenuOptionEditorRepository.deleteAll(options);
+        restaurantMenuOptionGroupEditorRepository.delete(group);
+        return true;
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public boolean removeOptionGroupFromCategory(Long menuVersionId, Long categoryId, Long optionGroupId) {
+        RestaurantMenuOptionGroup group = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId)
+                .orElse(null);
+        if (group == null) {
+            return false;
+        }
+        if (!menuVersionId.equals(group.getMenuVersionId())
+                || !categoryId.equals(group.getCategoryId())
+                || group.getItemId() != null
+                || group.getItemSizeId() != null) {
+            throw new IllegalStateException("Choice group is not linked to this category");
         }
 
         List<RestaurantMenuOption> options = restaurantMenuOptionEditorRepository
@@ -1135,6 +1425,7 @@ public class RestaurantMenuEditorService {
         restaurantMenuItemNutritionRepository.deleteByItemId(itemId);
         restaurantMenuItemAllergenRepository.deleteByItemId(itemId);
         restaurantMenuItemTagRepository.deleteByItemId(itemId);
+        deleteSetting(itemTaxationCategorySettingName(itemId));
     }
 
     private void clearDefaultSizeForItem(Long menuVersionId, Long itemId, Long excludedSizeId) {

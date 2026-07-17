@@ -183,8 +183,8 @@ public class StagedRestaurantOrderWorkflowService {
         orderDetail.setDeliveryFee(defaultDouble(stagedOrder.getDeliveryFee()));
         orderDetail.setServiceFee(defaultDouble(stagedOrder.getServiceFee()));
         orderDetail.setTaxOnFees(defaultDouble(stagedOrder.getDeliveryFeeTax()));
-        orderDetail.setTotalTaxes(defaultDouble(stagedOrder.getGst())
-                + defaultDouble(stagedOrder.getItemTax())
+        orderDetail.setTotalTaxes(defaultDouble(stagedOrder.getItemTax())
+            + defaultDouble(stagedOrder.getServiceFeeTax())
                 + defaultDouble(stagedOrder.getDeliveryFeeTax()));
         orderDetail.setTotal(defaultDouble(stagedOrder.getTotal()));
         orderDetail.setPaymentMethod(normalizePaymentMethod(stagedOrder.getPaymentMethod()));
