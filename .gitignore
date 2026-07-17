@@ -25,3 +25,6 @@ webpack.generated.js
 /*.zip
 logs
 .env
+.cloudflared/config.yml
+.cloudflared/cert.pem
+.cloudflared/f13def48-174f-41e7-9421-65c901fdf517.json

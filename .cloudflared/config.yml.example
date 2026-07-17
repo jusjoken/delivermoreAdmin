@@ -1,0 +1,9 @@
+tunnel: delivermore-admin-dev
+credentials-file: /home/YOUR_USER/.cloudflared/delivermore-admin-dev.json
+
+ingress:
+  - hostname: admin-dev.delivermore.ca
+    service: https://localhost:8443
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
