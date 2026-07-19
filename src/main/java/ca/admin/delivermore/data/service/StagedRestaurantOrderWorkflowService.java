@@ -1,5 +1,6 @@
 package ca.admin.delivermore.data.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,12 +14,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import ca.admin.delivermore.collector.data.entity.OrderDetail;
+import ca.admin.delivermore.collector.data.entity.Restaurant;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrderLine;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrderLineOption;
 import ca.admin.delivermore.collector.data.service.EmailService;
 import ca.admin.delivermore.collector.data.service.OrderDetailRepository;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderLineOptionRepository;
 import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderLineRepository;
 import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderRepository;
@@ -33,7 +36,9 @@ public class StagedRestaurantOrderWorkflowService {
     private final OrderDetailRepository orderDetailRepository;
     private final StagedRestaurantOrderLineRepository stagedRestaurantOrderLineRepository;
     private final StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository;
+    private final RestaurantRepository restaurantRepository;
     private final EmailService emailService;
+    private final TabletOrderDispatchService tabletOrderDispatchService;
 
     @Value("${app.orders.support-email}")
     private String supportEmail;
@@ -43,12 +48,16 @@ public class StagedRestaurantOrderWorkflowService {
             OrderDetailRepository orderDetailRepository,
             StagedRestaurantOrderLineRepository stagedRestaurantOrderLineRepository,
             StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository,
-            EmailService emailService) {
+            RestaurantRepository restaurantRepository,
+            EmailService emailService,
+            TabletOrderDispatchService tabletOrderDispatchService) {
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.orderDetailRepository = orderDetailRepository;
         this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
         this.stagedRestaurantOrderLineOptionRepository = stagedRestaurantOrderLineOptionRepository;
+        this.restaurantRepository = restaurantRepository;
         this.emailService = emailService;
+        this.tabletOrderDispatchService = tabletOrderDispatchService;
     }
 
     public List<StagedRestaurantOrder> listPendingApprovals() {
@@ -57,6 +66,12 @@ public class StagedRestaurantOrderWorkflowService {
 
     public List<StagedRestaurantOrder> listAll() {
         return stagedRestaurantOrderRepository.findAllByOrderBySubmittedAtDesc();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTookanSendEnabled(StagedRestaurantOrder stagedOrder) {
+        Restaurant restaurant = findEffectiveRestaurant(stagedOrder);
+        return restaurant != null && restaurant.getSendToTookan();
     }
 
     @Transactional
@@ -73,7 +88,10 @@ public class StagedRestaurantOrderWorkflowService {
         stagedOrder.setStatusUpdatedAt(now);
         stagedOrder.setOrderDetailId(orderDetail.getOrderId());
         stagedOrder.setStatusReason(null);
-        return stagedRestaurantOrderRepository.save(stagedOrder);
+        stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
+        maybeQueueTookanSubmission(stagedOrder);
+        return stagedOrder;
     }
 
     @Transactional
@@ -85,6 +103,7 @@ public class StagedRestaurantOrderWorkflowService {
         stagedOrder.setApprovalStatus(ApprovalStatus.DECLINED);
         stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
         stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
         sendDecisionEmailIfConfigured(stagedOrder);
         return stagedRestaurantOrderRepository.save(stagedOrder);
     }
@@ -98,6 +117,7 @@ public class StagedRestaurantOrderWorkflowService {
         stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
         stagedOrder.setStatusReason(optionalReason(reason));
         stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
         sendDecisionEmailIfConfigured(stagedOrder);
         return stagedRestaurantOrderRepository.save(stagedOrder);
     }
@@ -284,5 +304,31 @@ public class StagedRestaurantOrderWorkflowService {
             candidate++;
         }
         return candidate;
+    }
+
+    private void maybeQueueTookanSubmission(StagedRestaurantOrder stagedOrder) {
+        Restaurant restaurant = findEffectiveRestaurant(stagedOrder);
+
+        if (restaurant == null || !restaurant.getSendToTookan()) {
+            return;
+        }
+
+        // TODO: implement Tookan task submission when integration is completed.
+        log.info("approve: sendToTookan is enabled for stagedOrderId={} restaurantId={}; Tookan submission is pending implementation",
+                stagedOrder.getId(), stagedOrder.getRestaurantId());
+    }
+
+    private Restaurant findEffectiveRestaurant(StagedRestaurantOrder stagedOrder) {
+        if (stagedOrder == null || stagedOrder.getRestaurantId() == null) {
+            return null;
+        }
+
+        LocalDate effectiveDate = stagedOrder.getSubmittedAt() == null
+                ? LocalDate.now()
+                : stagedOrder.getSubmittedAt().toLocalDate();
+
+        return restaurantRepository.findEffectiveByRestaurantId(
+                stagedOrder.getRestaurantId(),
+                effectiveDate).stream().findFirst().orElse(null);
     }
 }

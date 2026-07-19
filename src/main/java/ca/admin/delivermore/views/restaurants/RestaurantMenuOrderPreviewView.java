@@ -701,14 +701,20 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
 
     private Component buildRestaurantInfoCard() {
         VerticalLayout card = createCard();
-        card.add(new Span("Restaurant"));
-        card.add(createMutedText(previewData.restaurant().getName()));
-        card.add(new Span("Delivery fee"));
-        card.add(createMutedText(formatCurrency(previewData.deliveryFee())));
-        card.add(new Span("Approval flow"));
-        card.add(createMutedText(previewData.restaurant().getAutoApproveOrders()
-            ? "Auto-approved immediately"
-            : "Manual approval required before Tookan submission"));
+        Span restaurantName = new Span(previewData.restaurant().getName());
+        restaurantName.getStyle().set("font-weight", "600");
+        card.add(restaurantName);
+
+        HorizontalLayout deliveryFeeRow = new HorizontalLayout();
+        deliveryFeeRow.setPadding(false);
+        deliveryFeeRow.setSpacing(true);
+        deliveryFeeRow.setAlignItems(FlexComponent.Alignment.CENTER);
+        deliveryFeeRow.add(
+                createMutedText("Delivery fee: " + formatCurrency(previewData.deliveryFee())),
+                createInlineInfoButton("Delivery fee details", () -> openInfoDialog(
+                        "Delivery Fee",
+                        renderInfoTextWithPlaceholders(resolveDeliveryFeeInfoText()))));
+        card.add(deliveryFeeRow);
         return card;
     }
 
@@ -774,21 +780,13 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         totals.getStyle().set("padding-top", "12px");
 
         totals.add(buildTotalRow("Sub-total", calculateSubTotal()));
-        for (TaxLine taxLine : calculateUsedCategoryTaxLines()) {
-            totals.add(buildTotalRow(formatTaxLineLabel(taxLine.taxName(), taxLine.ratePercent()), taxLine.amount()));
-        }
-        totals.add(buildTotalRow("Service fee", calculateServiceFee()));
-        if (calculateServiceFeeTax() > 0d || calculateServiceFee() > 0d) {
-            totals.add(buildTotalRow(
-                      "Service fee tax (" + formatTaxLabel(previewData.serviceFeeTax().taxName(), previewData.serviceFeeTax().percentage()) + ")",
-                    calculateServiceFeeTax()));
-        }
-        totals.add(buildTotalRow("Delivery fee", calculateDeliveryFee()));
-        if (calculateDeliveryFeeTax() > 0d || calculateDeliveryFee() > 0d) {
-            totals.add(buildTotalRow(
-                      "Delivery fee tax (" + formatTaxLabel(previewData.deliveryFeeTax().taxName(), previewData.deliveryFeeTax().percentage()) + ")",
-                    calculateDeliveryFeeTax()));
-        }
+        totals.add(buildTotalRowWithLabelActions(
+                "Fees and taxes",
+                calculateFeesAndTaxesTotal(),
+                createInlineInfoButton("Fees and taxes details", () -> openInfoDialog(
+                        "Fees and Taxes",
+                        renderInfoTextWithPlaceholders(resolveFeesTaxesInfoText()))),
+                createInlineActionButton("$", "Preview-only breakdown", this::openFeesTaxesBreakdownDialog)));
         if (isOnlinePaymentMethod(checkoutState.paymentMethod) || calculateTipAmount() > 0d) {
             totals.add(buildTotalRow("Tip", calculateTipAmount()));
         }
@@ -1026,7 +1024,32 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private HorizontalLayout buildTotalRow(String label, double value) {
         HorizontalLayout row = new HorizontalLayout();
         row.setWidthFull();
+        row.setAlignItems(FlexComponent.Alignment.CENTER);
         Span left = createMutedText(label);
+        Span right = createMutedText(formatCurrency(value));
+        row.add(left, right);
+        row.expand(left);
+        return row;
+    }
+
+    private HorizontalLayout buildTotalRowWithLabelActions(String label, double value, Component... actions) {
+        HorizontalLayout row = new HorizontalLayout();
+        row.setWidthFull();
+        row.setAlignItems(FlexComponent.Alignment.CENTER);
+
+        HorizontalLayout left = new HorizontalLayout();
+        left.setPadding(false);
+        left.setSpacing(true);
+        left.setAlignItems(FlexComponent.Alignment.CENTER);
+        left.add(createMutedText(label));
+        if (actions != null) {
+            for (Component action : actions) {
+                if (action != null) {
+                    left.add(action);
+                }
+            }
+        }
+
         Span right = createMutedText(formatCurrency(value));
         row.add(left, right);
         row.expand(left);
@@ -1075,6 +1098,91 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return span;
     }
 
+    private Button createInlineInfoButton(String tooltip, Runnable action) {
+        Button button = new Button(VaadinIcon.INFO_CIRCLE_O.create(), event -> action.run());
+        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        button.getStyle().set("padding", "0");
+        button.getStyle().set("min-width", "var(--lumo-size-s)");
+        button.setTooltipText(tooltip);
+        return button;
+    }
+
+    private Button createInlineActionButton(String text, String tooltip, Runnable action) {
+        Button button = new Button(text, event -> action.run());
+        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        button.getStyle().set("padding", "0 var(--lumo-space-xs)");
+        button.getStyle().set("min-width", "var(--lumo-size-s)");
+        button.setTooltipText(tooltip);
+        return button;
+    }
+
+    private void openInfoDialog(String title, String bodyText) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(title);
+
+        Div body = new Div();
+        body.getStyle().set("white-space", "pre-wrap");
+        body.getStyle().set("max-width", "520px");
+        body.setText(bodyText);
+
+        Button close = new Button("Close", event -> dialog.close());
+        close.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(body);
+        dialog.getFooter().add(close);
+        dialog.open();
+    }
+
+    private void openFeesTaxesBreakdownDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Fees and Taxes Breakdown (Preview)");
+
+        VerticalLayout body = new VerticalLayout();
+        body.setPadding(false);
+        body.setSpacing(false);
+        body.setWidth("420px");
+
+        for (TaxLine taxLine : calculateUsedCategoryTaxLines()) {
+            body.add(buildInfoRow(formatTaxLineLabel(taxLine.taxName(), taxLine.ratePercent()), new Span(formatCurrency(taxLine.amount()))));
+        }
+        body.add(buildInfoRow("Service fee", new Span(formatCurrency(calculateServiceFee()))));
+        body.add(buildInfoRow(
+                "Service fee tax (" + formatTaxLabel(previewData.serviceFeeTax().taxName(), previewData.serviceFeeTax().percentage()) + ")",
+                new Span(formatCurrency(calculateServiceFeeTax()))));
+        body.add(buildInfoRow("Delivery fee", new Span(formatCurrency(calculateDeliveryFee()))));
+        body.add(buildInfoRow(
+                "Delivery fee tax (" + formatTaxLabel(previewData.deliveryFeeTax().taxName(), previewData.deliveryFeeTax().percentage()) + ")",
+                new Span(formatCurrency(calculateDeliveryFeeTax()))));
+
+        Button close = new Button("Close", event -> dialog.close());
+        close.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(body);
+        dialog.getFooter().add(close);
+        dialog.open();
+    }
+
+    private String resolveDeliveryFeeInfoText() {
+        String configured = previewData.deliveryFeeInfoText();
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        return "A delivery fee of {{DELIVERY_FEE}} applies to each order.";
+    }
+
+    private String resolveFeesTaxesInfoText() {
+        String configured = previewData.feesTaxesInfoText();
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        return "Fees and taxes include item taxes, service fee ({{SERVICE_FEE_PERCENT}}), service fee tax, delivery fee ({{DELIVERY_FEE}}), and delivery fee tax.";
+    }
+
+    private String renderInfoTextWithPlaceholders(String template) {
+        String withDeliveryFee = template.replace("{{DELIVERY_FEE}}", formatCurrency(calculateDeliveryFee()));
+        return withDeliveryFee.replace("{{SERVICE_FEE_PERCENT}}", formatPercent(previewData.serviceFeeRate() * 100d));
+    }
+
     private double minimumDisplayPrice(ItemData item) {
         if (item.sizes().isEmpty()) {
             return item.basePrice();
@@ -1121,6 +1229,15 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             return 0d;
         }
         return roundCurrency(deliveryFee * (rate / 100d));
+    }
+
+    private double calculateFeesAndTaxesTotal() {
+        return roundCurrency(
+                calculateCategoryTax()
+                        + calculateServiceFee()
+                        + calculateServiceFeeTax()
+                        + calculateDeliveryFee()
+                        + calculateDeliveryFeeTax());
     }
 
     private double calculateTipBaseTotal() {

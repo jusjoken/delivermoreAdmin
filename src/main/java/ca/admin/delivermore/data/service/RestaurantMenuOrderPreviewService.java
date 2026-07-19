@@ -34,6 +34,8 @@ public class RestaurantMenuOrderPreviewService {
         Map<String, TaxRateConfig> taxationRates,
         TaxRateConfig serviceFeeTax,
         TaxRateConfig deliveryFeeTax,
+            String deliveryFeeInfoText,
+            String feesTaxesInfoText,
             double serviceFeeRate,
             double deliveryFee) {
     }
@@ -123,6 +125,29 @@ public class RestaurantMenuOrderPreviewService {
 
         RestaurantMenuEditorService.NamedTaxRate serviceFeeTax = restaurantMenuEditorService.getServiceFeeTaxRate();
         RestaurantMenuEditorService.NamedTaxRate deliveryFeeTax = restaurantMenuEditorService.getDeliveryFeeTaxRate();
+        String serviceFeeTaxName = "";
+        double serviceFeeTaxPct = 0d;
+        if (serviceFeeTax != null) {
+            if (serviceFeeTax.name() != null) {
+                serviceFeeTaxName = serviceFeeTax.name();
+            }
+            Double rawPct = serviceFeeTax.percentage();
+            if (rawPct != null) {
+                serviceFeeTaxPct = rawPct.doubleValue();
+            }
+        }
+
+        String deliveryFeeTaxName = "";
+        double deliveryFeeTaxPct = 0d;
+        if (deliveryFeeTax != null) {
+            if (deliveryFeeTax.name() != null) {
+                deliveryFeeTaxName = deliveryFeeTax.name();
+            }
+            Double rawPct = deliveryFeeTax.percentage();
+            if (rawPct != null) {
+                deliveryFeeTaxPct = rawPct.doubleValue();
+            }
+        }
 
         return new PreviewData(
                 restaurant,
@@ -130,13 +155,15 @@ public class RestaurantMenuOrderPreviewService {
                 categories,
                 taxationRates,
             new TaxRateConfig(
-                serviceFeeTax == null || serviceFeeTax.name() == null ? "" : serviceFeeTax.name(),
-                serviceFeeTax == null || serviceFeeTax.percentage() == null ? 0d : serviceFeeTax.percentage()),
+                serviceFeeTaxName,
+                serviceFeeTaxPct),
             new TaxRateConfig(
-                deliveryFeeTax == null || deliveryFeeTax.name() == null ? "" : deliveryFeeTax.name(),
-                deliveryFeeTax == null || deliveryFeeTax.percentage() == null ? 0d : deliveryFeeTax.percentage()),
-                resolveServiceFeeRate(restaurant),
-                resolveDeliveryFee(restaurant));
+                deliveryFeeTaxName,
+                deliveryFeeTaxPct),
+                restaurantMenuEditorService.getCheckoutDeliveryFeeInfoText(),
+                restaurantMenuEditorService.getCheckoutFeesTaxesInfoText(),
+                restaurantMenuEditorService.getCheckoutServiceFeeRate(),
+                restaurantMenuEditorService.getCheckoutDeliveryFee());
     }
 
     private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuCategory category, RestaurantMenuItem item) {
@@ -248,16 +275,4 @@ public class RestaurantMenuOrderPreviewService {
         return basePrice + delta;
     }
 
-    private double resolveServiceFeeRate(Restaurant restaurant) {
-        Double value = restaurant.getServiceFeeRate();
-        if (value == null) {
-            return 0d;
-        }
-        return value > 1d ? value / 100d : value;
-    }
-
-    private double resolveDeliveryFee(Restaurant restaurant) {
-        Double value = restaurant.getDeliveryFee();
-        return value == null ? 0d : value;
-    }
 }

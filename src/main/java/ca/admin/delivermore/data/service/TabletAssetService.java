@@ -4,6 +4,7 @@ import ca.admin.delivermore.data.entity.TabletAsset;
 import ca.admin.delivermore.data.entity.TabletAssetHistory;
 import ca.admin.delivermore.security.AuthenticatedUser;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,21 +43,41 @@ public class TabletAssetService {
 
     @Transactional
     public TabletAsset update(TabletAsset asset) {
+        if (asset == null || asset.getId() == null) {
+            throw new IllegalArgumentException("Asset id is required for update");
+        }
+
         LocalDateTime now = LocalDateTime.now();
         String who = currentUsername();
 
-        // preserve createdAt/createdBy if already set; but ensure updated fields are set
-        if (asset.getCreatedAt() == null) {
-            asset.setCreatedAt(now);
+        TabletAsset current = assetRepo.findById(asset.getId()).orElseThrow();
+
+        // Apply only admin-editable fields so background heartbeat/token writes are preserved.
+        current.setAssetName(asset.getAssetName());
+        current.setAssetTag(asset.getAssetTag());
+        current.setAssignedFleetId(asset.getAssignedFleetId());
+        current.setRestaurantName(asset.getRestaurantName());
+        current.setRestaurantId(asset.getRestaurantId());
+        current.setArchived(asset.isArchived());
+        current.setNotes(asset.getNotes());
+
+        // preserve original created metadata; update audit on each write.
+        if (current.getCreatedAt() == null) {
+            current.setCreatedAt(now);
         }
-        if (asset.getCreatedBy() == null || asset.getCreatedBy().isBlank()) {
-            asset.setCreatedBy(who);
+        if (current.getCreatedBy() == null || current.getCreatedBy().isBlank()) {
+            current.setCreatedBy(who);
         }
 
-        asset.setUpdatedAt(now);
-        asset.setUpdatedBy(who);
+        current.setUpdatedAt(now);
+        current.setUpdatedBy(who);
 
-        TabletAsset saved = assetRepo.save(asset);
+        TabletAsset saved;
+        try {
+            saved = assetRepo.save(current);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new IllegalStateException("This asset was updated by another process. Refresh and try again.", ex);
+        }
         addHistory(saved, TabletAssetHistory.ChangeType.UPDATE);
         return saved;
     }

@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @PageTitle("Asset History Browser")
-@Route(value = "assets/history", layout = MainLayout.class)
+@Route(value = "tablet-assets/history", layout = MainLayout.class)
 @RolesAllowed({"ADMIN"})
 public class TabletAssetHistoryView extends VerticalLayout implements BeforeEnterObserver {
 
@@ -63,7 +63,7 @@ public class TabletAssetHistoryView extends VerticalLayout implements BeforeEnte
         grid.setSizeFull();
 
         Button back = new Button("Back");
-        back.addClickListener(e -> UI.getCurrent().navigate("assets"));
+        back.addClickListener(e -> UI.getCurrent().navigate("tablet-assets"));
 
         configureAssetSelect();
 
@@ -102,7 +102,7 @@ public class TabletAssetHistoryView extends VerticalLayout implements BeforeEnte
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
-        // Read optional assetId from query string: /assets/history?assetId=123
+        // Read optional assetId from query string: /tablet-assets/history?assetId=123
         Optional<String> qp = event.getLocation()
                 .getQueryParameters()
                 .getParameters()
@@ -178,7 +178,7 @@ public class TabletAssetHistoryView extends VerticalLayout implements BeforeEnte
         UI ui = UI.getCurrent();
         if (ui == null) return;
 
-        String path = "assets/history";
+        String path = "tablet-assets/history";
         if (assetId != null) {
             path += "?" + ASSET_ID_QP + "=" + assetId;
         }

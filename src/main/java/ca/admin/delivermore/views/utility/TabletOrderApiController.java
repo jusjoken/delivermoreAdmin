@@ -1,7 +1,11 @@
 package ca.admin.delivermore.views.utility;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -32,6 +36,11 @@ public class TabletOrderApiController {
 
     private static final String ASSET_TAG_HEADER = "X-Tablet-Asset-Tag";
     private static final String API_KEY_HEADER = "X-Tablet-Api-Key";
+    private static final int MAX_HISTORY_LIMIT = 200;
+    private static final Set<ApprovalStatus> COMPLETED_STATUSES = EnumSet.of(
+            ApprovalStatus.APPROVED,
+            ApprovalStatus.DECLINED,
+            ApprovalStatus.CANCELED);
 
     private final TabletApiAccessService tabletApiAccessService;
     private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
@@ -101,6 +110,33 @@ public class TabletOrderApiController {
                         order.getTotal(),
                         order.getApprovalStatus(),
                         order.getCustomerComments() != null && !order.getCustomerComments().isBlank()))
+                .toList();
+    }
+
+    @GetMapping("/history")
+    public List<OrderHistorySummary> listOrderHistory(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @RequestParam(name = "since") String since,
+            @RequestParam(name = "limit", defaultValue = "200") int limit) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        LocalDateTime sinceDateTime = parseSince(since);
+        int boundedLimit = Math.max(1, Math.min(limit, MAX_HISTORY_LIMIT));
+
+        return stagedRestaurantOrderRepository
+                .findCompletedHistorySince(tabletAsset.getRestaurantId(), COMPLETED_STATUSES, sinceDateTime)
+                .stream()
+                .limit(boundedLimit)
+                .map(order -> new OrderHistorySummary(
+                        order.getId(),
+                        order.getRestaurantId(),
+                        order.getRestaurantName(),
+                        order.getContactName(),
+                        order.getSubmittedAt(),
+                        order.getTotal(),
+                        order.getApprovalStatus(),
+                        order.getStatusReason(),
+                        order.getStatusUpdatedAt()))
                 .toList();
     }
 
@@ -208,6 +244,24 @@ public class TabletOrderApiController {
         return stagedOrder;
     }
 
+    private LocalDateTime parseSince(String since) {
+        if (since == null || since.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "since is required (ISO date)");
+        }
+
+        try {
+            return LocalDate.parse(since.trim()).atStartOfDay();
+        } catch (DateTimeParseException ignored) {
+            // Fallback for clients that accidentally send date-time.
+        }
+
+        try {
+            return LocalDateTime.parse(since.trim());
+        } catch (DateTimeParseException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "since must be ISO date, e.g. 2026-07-18", ex);
+        }
+    }
+
     public record PendingOrderSummary(
             Long stagedOrderId,
             Long restaurantId,
@@ -217,6 +271,18 @@ public class TabletOrderApiController {
             Double total,
             ApprovalStatus approvalStatus,
             boolean hasCustomerComments) {
+    }
+
+    public record OrderHistorySummary(
+            Long stagedOrderId,
+            Long restaurantId,
+            String restaurantName,
+            String contactName,
+            LocalDateTime submittedAt,
+            Double total,
+            ApprovalStatus approvalStatus,
+            String statusReason,
+            LocalDateTime statusUpdatedAt) {
     }
 
     public record DecisionRequest(String reason) {

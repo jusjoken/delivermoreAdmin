@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.vaadin.flow.component.UI;
@@ -21,7 +20,6 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
-import com.vaadin.flow.component.contextmenu.MenuItem;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.dnd.DragSource;
 import com.vaadin.flow.component.grid.Grid;
@@ -114,10 +112,11 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     // UI Components
     private final H3 title = new H3("Restaurant Menu Editor");
     private final Span statusBanner = new Span();
+    private final ComboBox<Restaurant> restaurantSelector = new ComboBox<>("Restaurant");
     private final Button createDraftButton = new Button("Create Draft");
     private final Button publishDraftButton = new Button("Publish Draft");
     private final Button previewButton = new Button("Preview & Test Ordering");
-    private final MenuBar dataTablesMenu = new MenuBar();
+    private final MenuBar dataTablesMenu;
     private final Button refreshButton = new Button("Refresh");
     
     // Left pane: TreeGrid hierarchy
@@ -145,6 +144,8 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     private final List<String> itemAllergenOptions = new ArrayList<>(DEFAULT_ITEM_ALLERGEN_OPTIONS);
     private final List<String> majorGroupOptions = new ArrayList<>(DEFAULT_MAJOR_GROUP_OPTIONS);
     private final List<String> taxationCategoryOptions = new ArrayList<>(DEFAULT_TAXATION_CATEGORY_OPTIONS);
+    private List<Restaurant> selectableRestaurants = List.of();
+    private boolean updatingRestaurantSelector;
     
     // Helper class for TreeGrid nodes
     private record MenuTreeNode(String type, Object data, String displayName) {
@@ -175,11 +176,12 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
     public RestaurantMenuEditorView(RestaurantMenuEditorService restaurantMenuEditorService) {
         this.restaurantMenuEditorService = restaurantMenuEditorService;
+        this.dataTablesMenu = new MenuDataTablesMenuBar(restaurantMenuEditorService, this::refreshItemSettingsOptionLists);
         setSizeFull();
         configureHeader();
+        configureRestaurantSelector();
         configureEditorTree();
         configureChoiceLibrary();
-        configureDataTablesMenu();
         configureActions();
 
         SplitLayout splitLayout = new SplitLayout(editorTree, choiceLibrary);
@@ -192,6 +194,8 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
+        refreshSelectableRestaurants();
+
         Optional<String> restaurantIdValue = event.getLocation()
                 .getQueryParameters()
                 .getParameters()
@@ -199,17 +203,19 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 .stream()
                 .findFirst();
 
-        restaurantId = restaurantIdValue.flatMap(this::parseLong).orElse(null);
-        if (restaurantId == null) {
-            clearEditor("No restaurant selected. Open this page from Restaurants.");
+        Long requestedRestaurantId = restaurantIdValue.flatMap(this::parseLong).orElse(null);
+        Restaurant selectedRestaurant = resolveSelectedRestaurant(requestedRestaurantId);
+        if (selectedRestaurant == null) {
+            restaurantId = null;
+            restaurant = null;
+            syncRestaurantSelector();
+            clearEditor("No effective restaurants available.");
             return;
         }
 
-        restaurant = restaurantMenuEditorService.getRestaurant(restaurantId);
-        if (restaurant == null) {
-            clearEditor("Restaurant not found for id " + restaurantId);
-            return;
-        }
+        restaurant = selectedRestaurant;
+        restaurantId = selectedRestaurant.getRestaurantId();
+        syncRestaurantSelector();
 
         refreshEditorData();
     }
@@ -221,58 +227,93 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         statusBanner.setWidthFull();
     }
 
+    private void configureRestaurantSelector() {
+        restaurantSelector.setWidth("420px");
+        restaurantSelector.setClearButtonVisible(false);
+        restaurantSelector.setItemLabelGenerator(value -> {
+            if (value == null) {
+                return "";
+            }
+            return value.getName() + " (" + value.getRestaurantId() + ")";
+        });
+        restaurantSelector.addValueChangeListener(event -> {
+            if (updatingRestaurantSelector || event.isFromClient() == false) {
+                return;
+            }
+            Restaurant selected = event.getValue();
+            if (selected == null || selected.getRestaurantId() == null) {
+                return;
+            }
+            if (selected.getRestaurantId().equals(restaurantId)) {
+                return;
+            }
+            UI.getCurrent().navigate("restaurants/menu-editor?restaurantId=" + selected.getRestaurantId());
+        });
+    }
+
     private VerticalLayout buildTopArea() {
         Button backButton = new Button("Back to Restaurants", e -> UI.getCurrent().navigate("restaurants"));
         backButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        HorizontalLayout restaurantRow = new HorizontalLayout(restaurantSelector);
+        restaurantRow.setWidthFull();
+        restaurantRow.setAlignItems(FlexComponent.Alignment.END);
 
         HorizontalLayout actions = new HorizontalLayout(createDraftButton, publishDraftButton, previewButton, dataTablesMenu, refreshButton);
         actions.setAlignItems(FlexComponent.Alignment.END);
         actions.setWidthFull();
 
-        VerticalLayout top = new VerticalLayout(backButton, title, statusBanner, actions);
+        VerticalLayout top = new VerticalLayout(backButton, title, restaurantRow, statusBanner, actions);
         top.setPadding(false);
         top.setSpacing(true);
         top.setWidthFull();
         return top;
     }
 
-    private void configureDataTablesMenu() {
-        MenuItem dataTables = dataTablesMenu.addItem("Data Tables");
-        dataTables.getSubMenu().addItem("Mark Items As List", event -> openMasterListDialog(
-                "Edit Mark Items As List",
-                "One value per line. This list is used by Item Settings.",
-                itemTagOptions,
-                values -> {
-                    restaurantMenuEditorService.saveItemTagOptions(values);
-                    refreshItemSettingsOptionLists();
-                }));
-        dataTables.getSubMenu().addItem("Item Allergens List", event -> openMasterListDialog(
-                "Edit Item Allergens List",
-                "One value per line. This list is used by Item Settings.",
-                itemAllergenOptions,
-                values -> {
-                    restaurantMenuEditorService.saveItemAllergenOptions(values);
-                    refreshItemSettingsOptionLists();
-                }));
-        dataTables.getSubMenu().addItem("Major Group List", event -> openMasterListDialog(
-                "Edit Major Group List",
-                "One value per line. This list is used in Choices & Addons > More > Major group.",
-                majorGroupOptions,
-                values -> {
-                    restaurantMenuEditorService.saveMajorGroupOptions(values);
-                    refreshItemSettingsOptionLists();
-                }));
-        dataTables.getSubMenu().addItem("Taxation Categories List", event -> openTaxationCategoryRatesDialog());
-        dataTables.getSubMenu().addItem("Service Fee Tax", event -> openNamedTaxRateDialog(
-            "Service Fee Tax",
-            "Configure the single tax applied to service fee.",
-            restaurantMenuEditorService.getServiceFeeTaxRate(),
-            restaurantMenuEditorService::saveServiceFeeTaxRate));
-        dataTables.getSubMenu().addItem("Delivery Fee Tax", event -> openNamedTaxRateDialog(
-            "Delivery Fee Tax",
-            "Configure the single tax applied to delivery fee.",
-            restaurantMenuEditorService.getDeliveryFeeTaxRate(),
-            restaurantMenuEditorService::saveDeliveryFeeTaxRate));
+    private void refreshSelectableRestaurants() {
+        selectableRestaurants = restaurantMenuEditorService.listEffectiveRestaurants();
+        updatingRestaurantSelector = true;
+        restaurantSelector.setItems(selectableRestaurants);
+        updatingRestaurantSelector = false;
+    }
+
+    private Restaurant resolveSelectedRestaurant(Long requestedRestaurantId) {
+        if (selectableRestaurants.isEmpty()) {
+            return null;
+        }
+
+        if (requestedRestaurantId != null) {
+            for (Restaurant candidate : selectableRestaurants) {
+                if (requestedRestaurantId.equals(candidate.getRestaurantId())) {
+                    return candidate;
+                }
+            }
+
+            Restaurant fallback = restaurantMenuEditorService.getRestaurant(requestedRestaurantId);
+            if (fallback != null) {
+                return fallback;
+            }
+        }
+
+        if (restaurantId != null) {
+            for (Restaurant candidate : selectableRestaurants) {
+                if (restaurantId.equals(candidate.getRestaurantId())) {
+                    return candidate;
+                }
+            }
+        }
+
+        return selectableRestaurants.getFirst();
+    }
+
+    private void syncRestaurantSelector() {
+        updatingRestaurantSelector = true;
+        if (restaurant == null || restaurantId == null) {
+            restaurantSelector.clear();
+        } else {
+            restaurantSelector.setValue(restaurant);
+        }
+        updatingRestaurantSelector = false;
     }
 
     private void refreshItemSettingsOptionLists() {
@@ -287,217 +328,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         taxationCategoryOptions.clear();
         taxationCategoryOptions.addAll(restaurantMenuEditorService.getTaxationCategoryOptions(DEFAULT_TAXATION_CATEGORY_OPTIONS));
-    }
-
-    private void openMasterListDialog(String title,
-                                      String helperText,
-                                      List<String> currentValues,
-                                      java.util.function.Consumer<List<String>> onSave) {
-        Dialog dialog = new Dialog();
-        dialog.setHeaderTitle(title);
-
-        VerticalLayout content = new VerticalLayout();
-        content.setPadding(false);
-        content.setSpacing(true);
-        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.LARGE);
-
-        Span helper = new Span(helperText);
-        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
-        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
-
-        TextArea valuesField = new TextArea("Values");
-        valuesField.setWidthFull();
-        valuesField.setHeight("360px");
-        valuesField.setValue(String.join("\n", currentValues));
-
-        content.add(helper, valuesField);
-
-        Button cancel = new Button("Cancel", event -> dialog.close());
-        Button save = new Button("Save", event -> {
-            List<String> values = parseMultiLineList(valuesField.getValue());
-            onSave.accept(values);
-            showSuccess("List updated");
-            dialog.close();
-        });
-        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
-        dialog.add(content);
-        dialog.getFooter().add(cancel, save);
-        dialog.open();
-    }
-
-    private void openTaxationCategoryRatesDialog() {
-        Dialog dialog = new Dialog();
-        dialog.setHeaderTitle("Edit Taxation Categories");
-
-        VerticalLayout content = new VerticalLayout();
-        content.setPadding(false);
-        content.setSpacing(true);
-        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.LARGE);
-
-        Span helper = new Span("Set category name, tax name, and tax %. Checkout only shows categories used on the order.");
-        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
-        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
-
-        VerticalLayout rows = new VerticalLayout();
-        rows.setPadding(false);
-        rows.setSpacing(true);
-        rows.setWidthFull();
-
-        List<TaxationCategoryRateRow> rowModels = new ArrayList<>();
-        List<RestaurantMenuEditorService.TaxationCategoryRate> existing = restaurantMenuEditorService
-                .getTaxationCategoryRates(DEFAULT_TAXATION_CATEGORY_OPTIONS);
-
-        if (existing.isEmpty()) {
-            addTaxationCategoryRateRow(rows, rowModels, null, null, 0d);
-        } else {
-            for (RestaurantMenuEditorService.TaxationCategoryRate rate : existing) {
-                addTaxationCategoryRateRow(rows, rowModels, rate.category(), rate.taxName(), rate.percentage());
-            }
-        }
-
-        Button addRow = new Button("Add category", VaadinIcon.PLUS.create(), event ->
-                addTaxationCategoryRateRow(rows, rowModels, null, null, 0d));
-        addRow.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
-
-        content.add(helper, rows, addRow);
-
-        Button cancel = new Button("Cancel", event -> dialog.close());
-        Button save = new Button("Save", event -> {
-            List<RestaurantMenuEditorService.TaxationCategoryRate> values = new ArrayList<>();
-            for (TaxationCategoryRateRow row : rowModels) {
-                if (row.removed()) {
-                    continue;
-                }
-                String name = trimToNull(row.nameField().getValue());
-                if (name == null) {
-                    continue;
-                }
-                String taxName = trimToNull(row.taxNameField().getValue());
-                Double pct = row.rateField().getValue();
-                values.add(new RestaurantMenuEditorService.TaxationCategoryRate(name, taxName == null ? "" : taxName, pct == null ? 0d : pct));
-            }
-            restaurantMenuEditorService.saveTaxationCategoryRates(values);
-            refreshItemSettingsOptionLists();
-            showSuccess("Taxation categories updated");
-            dialog.close();
-        });
-        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
-        dialog.add(content);
-        dialog.getFooter().add(cancel, save);
-        dialog.open();
-    }
-
-    private void addTaxationCategoryRateRow(
-            VerticalLayout rows,
-            List<TaxationCategoryRateRow> rowModels,
-            String name,
-            String taxName,
-            Double percentage) {
-        HorizontalLayout rowLayout = new HorizontalLayout();
-        rowLayout.setWidthFull();
-        rowLayout.setSpacing(true);
-        rowLayout.setAlignItems(FlexComponent.Alignment.END);
-
-        TextField nameField = new TextField("Category");
-        nameField.setWidthFull();
-        nameField.setValue(name == null ? "" : name);
-
-        TextField taxNameField = new TextField("Tax name");
-        taxNameField.setWidthFull();
-        taxNameField.setValue(taxName == null ? "" : taxName);
-
-        NumberField percentageField = new NumberField("Tax %");
-        percentageField.setMin(0d);
-        percentageField.setStep(0.01d);
-        percentageField.setWidth("180px");
-        percentageField.setValue(percentage == null ? 0d : percentage);
-
-        Button remove = iconButton(VaadinIcon.MINUS_CIRCLE_O, "Remove taxation category", event -> {
-            rows.remove(rowLayout);
-            for (int index = 0; index < rowModels.size(); index++) {
-                TaxationCategoryRateRow row = rowModels.get(index);
-                if (row.layout() == rowLayout) {
-                    rowModels.set(index, row.markRemoved());
-                    break;
-                }
-            }
-        });
-        remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
-
-        rowLayout.add(nameField, taxNameField, percentageField, remove);
-        rowLayout.expand(nameField, taxNameField);
-        rows.add(rowLayout);
-
-        rowModels.add(new TaxationCategoryRateRow(rowLayout, nameField, taxNameField, percentageField, false));
-    }
-
-    private void openNamedTaxRateDialog(
-            String title,
-            String helperText,
-            RestaurantMenuEditorService.NamedTaxRate existing,
-            java.util.function.Consumer<RestaurantMenuEditorService.NamedTaxRate> onSave) {
-        Dialog dialog = new Dialog();
-        dialog.setHeaderTitle(title);
-
-        VerticalLayout content = new VerticalLayout();
-        content.setPadding(false);
-        content.setSpacing(true);
-        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.COMPACT);
-
-        Span helper = new Span(helperText);
-        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
-        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
-
-        TextField nameField = new TextField("Tax name");
-        nameField.setWidthFull();
-        nameField.setValue(existing == null || existing.name() == null ? "" : existing.name());
-
-        NumberField rateField = new NumberField("Tax %");
-        rateField.setMin(0d);
-        rateField.setStep(0.01d);
-        rateField.setWidthFull();
-        rateField.setValue(existing == null || existing.percentage() == null ? 0d : existing.percentage());
-
-        Button cancel = new Button("Cancel", event -> dialog.close());
-        Button save = new Button("Save", event -> {
-            String name = trimToNull(nameField.getValue());
-            Double pct = rateField.getValue();
-            onSave.accept(new RestaurantMenuEditorService.NamedTaxRate(name == null ? "" : name, pct == null ? 0d : pct));
-            showSuccess("Tax updated");
-            dialog.close();
-        });
-        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
-        content.add(helper, nameField, rateField);
-        dialog.add(content);
-        dialog.getFooter().add(cancel, save);
-        dialog.open();
-    }
-
-    private record TaxationCategoryRateRow(
-            HorizontalLayout layout,
-            TextField nameField,
-            TextField taxNameField,
-            NumberField rateField,
-            boolean removed) {
-
-        private TaxationCategoryRateRow markRemoved() {
-            return new TaxationCategoryRateRow(layout, nameField, taxNameField, rateField, true);
-        }
-    }
-
-    private List<String> parseMultiLineList(String input) {
-        if (input == null || input.isBlank()) {
-            return List.of();
-        }
-        return Pattern.compile("\\r?\\n|,")
-                .splitAsStream(input)
-                .map(this::trimToNull)
-                .filter(value -> value != null && !value.isEmpty())
-                .distinct()
-                .toList();
     }
 
     private void configureEditorTree() {
@@ -1013,8 +843,14 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         currentMenuVersion = restaurantMenuEditorService.getEditorVersion(restaurantId);
         if (currentMenuVersion == null) {
             categoryItemsMap.clear();
+            categoryOptionGroupsMap.clear();
+            itemOptionGroupsMap.clear();
+            groupOptionsMap.clear();
             itemSizesMap.clear();
+            expandedCategoryIds.clear();
+            expandedItemIds.clear();
             editorTree.getDataProvider().refreshAll();
+            refreshChoiceLibrary();
             updateBanner();
             updateActionStates();
             return;
@@ -1102,6 +938,12 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 ? "Restaurant not loaded"
                 : restaurant.getName() + " (" + restaurant.getRestaurantId() + ")";
 
+        if (restaurant != null) {
+            title.setText("Restaurant Menu Editor - " + restaurant.getName());
+        } else {
+            title.setText("Restaurant Menu Editor");
+        }
+
         if (currentMenuVersion == null) {
             statusBanner.setText(restaurantText + " | No menu data yet. Create a draft when ready.");
             return;
@@ -1130,6 +972,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         previewButton.setEnabled(currentMenuVersion != null && restaurantId != null);
         dataTablesMenu.setEnabled(restaurantId != null);
         refreshButton.setEnabled(restaurantId != null);
+        restaurantSelector.setEnabled(!selectableRestaurants.isEmpty());
     }
 
     private Div buildNameCell(MenuTreeNode node) {

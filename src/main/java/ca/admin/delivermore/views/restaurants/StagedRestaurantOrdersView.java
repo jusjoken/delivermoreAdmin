@@ -10,6 +10,7 @@ import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -79,6 +80,10 @@ public class StagedRestaurantOrdersView extends VerticalLayout {
         grid.addColumn(StagedRestaurantOrder::getContactPhone).setHeader("Phone").setAutoWidth(true);
         grid.addColumn(order -> formatCurrency(order.getTotal())).setHeader("Total").setAutoWidth(true);
         grid.addColumn(order -> order.getApprovalStatus().name()).setHeader("Status").setAutoWidth(true);
+        grid.addComponentColumn(this::buildTookanSendStatus)
+            .setHeader("Tookan send")
+            .setAutoWidth(true)
+            .setFlexGrow(0);
         grid.addColumn(order -> formatNullableLong(order.getOrderDetailId())).setHeader("OrderDetail #").setAutoWidth(true);
         grid.addColumn(order -> order.getStatusReason() == null ? "" : order.getStatusReason()).setHeader("Reason").setFlexGrow(1);
 
@@ -112,6 +117,13 @@ public class StagedRestaurantOrdersView extends VerticalLayout {
         return actions;
     }
 
+    private Span buildTookanSendStatus(StagedRestaurantOrder order) {
+        boolean enabled = workflowService.isTookanSendEnabled(order);
+        Span status = new Span(enabled ? "Enabled" : "Disabled");
+        status.getElement().getThemeList().add(enabled ? "badge success" : "badge error");
+        return status;
+    }
+
     private void openApproveDialog(StagedRestaurantOrder order) {
         ConfirmDialog dialog = new ConfirmDialog();
         dialog.setHeader("Approve order #" + order.getId());
@@ -119,7 +131,12 @@ public class StagedRestaurantOrdersView extends VerticalLayout {
         dialog.setCancelText("Close");
         dialog.setConfirmText("Approve");
 
-        dialog.setText("Approve this order and create the OrderDetail record. No reason is needed for approval.");
+        boolean tookanSendEnabled = workflowService.isTookanSendEnabled(order);
+        if (tookanSendEnabled) {
+            dialog.setText("Approve this order and create the OrderDetail record. Tookan send is enabled for this restaurant. No reason is needed for approval.");
+        } else {
+            dialog.setText("Approve this order and create the OrderDetail record. Tookan send is disabled for this restaurant, so manual approval will not send to Tookan. No reason is needed for approval.");
+        }
 
         dialog.addConfirmListener(event -> {
             try {

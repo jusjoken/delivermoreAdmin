@@ -83,6 +83,15 @@ public class TabletAsset {
     @Column(name = "last_heartbeat_app_version")
     private String lastHeartbeatAppVersion;
 
+    @Column(name = "provisioning_nonce", length = 128)
+    private String provisioningNonce;
+
+    @Column(name = "provisioning_expires_at")
+    private LocalDateTime provisioningExpiresAt;
+
+    @Column(name = "provisioned_at")
+    private LocalDateTime provisionedAt;
+
     public TabletAsset() {}
 
     public Long getId() { return id; }
@@ -161,6 +170,30 @@ public class TabletAsset {
 
     public void setLastHeartbeatAppVersion(String lastHeartbeatAppVersion) {
         this.lastHeartbeatAppVersion = lastHeartbeatAppVersion;
+    }
+
+    public String getProvisioningNonce() {
+        return provisioningNonce;
+    }
+
+    public void setProvisioningNonce(String provisioningNonce) {
+        this.provisioningNonce = provisioningNonce;
+    }
+
+    public LocalDateTime getProvisioningExpiresAt() {
+        return provisioningExpiresAt;
+    }
+
+    public void setProvisioningExpiresAt(LocalDateTime provisioningExpiresAt) {
+        this.provisioningExpiresAt = provisioningExpiresAt;
+    }
+
+    public LocalDateTime getProvisionedAt() {
+        return provisionedAt;
+    }
+
+    public void setProvisionedAt(LocalDateTime provisionedAt) {
+        this.provisionedAt = provisionedAt;
     }
     
     @Override

@@ -2,17 +2,18 @@ package ca.admin.delivermore.data.service;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
@@ -21,11 +22,12 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 
+import ca.admin.delivermore.collector.data.entity.Restaurant;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder;
 import ca.admin.delivermore.collector.data.service.EmailService;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.data.entity.TabletAsset;
 import ca.admin.delivermore.data.entity.TabletOrderDispatch;
-
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -36,6 +38,7 @@ public class TabletOrderDispatchService {
 
     private final TabletAssetRepository tabletAssetRepository;
     private final TabletOrderDispatchRepository tabletOrderDispatchRepository;
+    private final RestaurantRepository restaurantRepository;
     private final EmailService emailService;
     private FirebaseMessaging firebaseMessaging;
 
@@ -60,9 +63,11 @@ public class TabletOrderDispatchService {
     public TabletOrderDispatchService(
             TabletAssetRepository tabletAssetRepository,
             TabletOrderDispatchRepository tabletOrderDispatchRepository,
+            RestaurantRepository restaurantRepository,
             EmailService emailService) {
         this.tabletAssetRepository = tabletAssetRepository;
         this.tabletOrderDispatchRepository = tabletOrderDispatchRepository;
+        this.restaurantRepository = restaurantRepository;
         this.emailService = emailService;
     }
 
@@ -136,6 +141,12 @@ public class TabletOrderDispatchService {
             return;
         }
 
+        if (!isRestaurantTabletSendingEnabled(stagedOrder)) {
+            log.info("dispatchOrderPush: skipped stagedOrderId={} because sendToTablet is disabled for restaurantId={}",
+                    stagedOrder.getId(), stagedOrder.getRestaurantId());
+            return;
+        }
+
         TabletOrderDispatch dispatch = tabletOrderDispatchRepository.findByStagedOrderId(stagedOrder.getId())
                 .orElseGet(() -> createDispatch(stagedOrder));
 
@@ -196,19 +207,79 @@ public class TabletOrderDispatchService {
     }
 
     @Transactional
+    public void dispatchOrderStatusChangedPush(StagedRestaurantOrder stagedOrder) {
+        if (stagedOrder == null || stagedOrder.getId() == null) {
+            return;
+        }
+
+        if (!isRestaurantTabletSendingEnabled(stagedOrder)) {
+            log.info("dispatchOrderStatusChangedPush: skipped stagedOrderId={} because sendToTablet is disabled for restaurantId={}",
+                    stagedOrder.getId(), stagedOrder.getRestaurantId());
+            return;
+        }
+
+        Optional<TabletAsset> tabletAssetOptional = tabletAssetRepository
+                .findFirstByRestaurantIdAndArchivedFalse(stagedOrder.getRestaurantId());
+        if (tabletAssetOptional.isEmpty()) {
+            log.warn("dispatchOrderStatusChangedPush: no active tablet asset assigned for restaurantId={} stagedOrderId={}",
+                    stagedOrder.getRestaurantId(), stagedOrder.getId());
+            return;
+        }
+
+        TabletAsset tabletAsset = tabletAssetOptional.get();
+
+        if (!tabletPushEnabled) {
+            log.info("dispatchOrderStatusChangedPush: skipped because tablet push is disabled by configuration");
+            return;
+        }
+
+        if (firebaseMessaging == null) {
+            log.warn("dispatchOrderStatusChangedPush: Firebase messaging is not initialized");
+            return;
+        }
+
+        if (!StringUtils.hasText(tabletAsset.getFcmRegistrationToken())) {
+            log.warn("dispatchOrderStatusChangedPush: missing FCM token for asset={} stagedOrderId={}",
+                    tabletAsset.getAssetTag(), stagedOrder.getId());
+            return;
+        }
+
+        try {
+            Message.Builder messageBuilder = Message.builder()
+                    .setToken(tabletAsset.getFcmRegistrationToken())
+                    .putData("type", "dm_order_status_changed")
+                    .putData("stagedOrderId", String.valueOf(stagedOrder.getId()))
+                    .putData("restaurantId", String.valueOf(stagedOrder.getRestaurantId()))
+                    .putData("restaurantName", String.valueOf(stagedOrder.getRestaurantName()))
+                    .putData("assetTag", String.valueOf(tabletAsset.getAssetTag()))
+                    .putData("approvalStatus", String.valueOf(stagedOrder.getApprovalStatus()));
+
+            if (stagedOrder.getStatusReason() != null) {
+                messageBuilder.putData("statusReason", stagedOrder.getStatusReason());
+            }
+            if (stagedOrder.getStatusUpdatedAt() != null) {
+                messageBuilder.putData("statusUpdatedAt", stagedOrder.getStatusUpdatedAt().toString());
+            }
+
+            String messageId = firebaseMessaging.send(messageBuilder.build());
+            log.info("dispatchOrderStatusChangedPush: pushed stagedOrderId={} status={} to tablet asset={} messageId={}",
+                    stagedOrder.getId(), stagedOrder.getApprovalStatus(), tabletAsset.getAssetTag(), messageId);
+        } catch (FirebaseMessagingException ex) {
+            log.warn("dispatchOrderStatusChangedPush: failed stagedOrderId={} status={} reason={}",
+                    stagedOrder.getId(), stagedOrder.getApprovalStatus(), summarizeFirebaseError(ex));
+        }
+    }
+
+    @Transactional
     public void registerFcmToken(String assetTag, String registrationToken) {
         if (!StringUtils.hasText(assetTag) || !StringUtils.hasText(registrationToken)) {
             return;
         }
 
-        TabletAsset tabletAsset = tabletAssetRepository.findByAssetTag(assetTag);
-        if (tabletAsset == null || tabletAsset.isArchived()) {
-            return;
-        }
-
-        tabletAsset.setFcmRegistrationToken(registrationToken.trim());
-        tabletAsset.setFcmTokenUpdatedAt(LocalDateTime.now());
-        tabletAssetRepository.save(tabletAsset);
+        tabletAssetRepository.updateTokenByAssetTag(
+                assetTag.trim(),
+                registrationToken.trim(),
+                LocalDateTime.now());
     }
 
     @Transactional
@@ -217,16 +288,10 @@ public class TabletOrderDispatchService {
             return;
         }
 
-        TabletAsset tabletAsset = tabletAssetRepository.findByAssetTag(assetTag);
-        if (tabletAsset == null || tabletAsset.isArchived()) {
-            return;
-        }
-
-        tabletAsset.setLastHeartbeatAt(LocalDateTime.now());
-        if (StringUtils.hasText(appVersion)) {
-            tabletAsset.setLastHeartbeatAppVersion(appVersion.trim());
-        }
-        tabletAssetRepository.save(tabletAsset);
+        tabletAssetRepository.updateHeartbeatByAssetTag(
+                assetTag.trim(),
+                LocalDateTime.now(),
+                StringUtils.hasText(appVersion) ? appVersion.trim() : null);
     }
 
     @Transactional
@@ -346,5 +411,21 @@ public class TabletOrderDispatchService {
             summary.append(ex.getMessage());
         }
         return summary.length() == 0 ? "unknown Firebase error" : summary.toString();
+    }
+
+    private boolean isRestaurantTabletSendingEnabled(StagedRestaurantOrder stagedOrder) {
+        if (stagedOrder.getRestaurantId() == null) {
+            return false;
+        }
+
+        LocalDate effectiveDate = stagedOrder.getSubmittedAt() == null
+                ? LocalDate.now()
+                : stagedOrder.getSubmittedAt().toLocalDate();
+
+        return restaurantRepository.findEffectiveByRestaurantId(stagedOrder.getRestaurantId(), effectiveDate)
+                .stream()
+                .findFirst()
+                .map(Restaurant::getSendToTablet)
+                .orElse(false);
     }
 }

@@ -32,6 +32,7 @@ import ca.admin.delivermore.security.AuthenticatedUser;
 import ca.admin.delivermore.views.about.AboutView;
 import ca.admin.delivermore.views.asset.TabletAssetHistoryView;
 import ca.admin.delivermore.views.asset.TabletAssetsView;
+import ca.admin.delivermore.views.asset.TabletOrderMonitoringView;
 import ca.admin.delivermore.views.drivers.DriverAdjustmentTemplateView;
 import ca.admin.delivermore.views.drivers.DriverPayoutView;
 import ca.admin.delivermore.views.drivers.DriverRedeemGiftCardView;
@@ -43,6 +44,7 @@ import ca.admin.delivermore.views.home.HomeView;
 import ca.admin.delivermore.views.intuit.QBOConnectView;
 import ca.admin.delivermore.views.login.PasswordReset;
 import ca.admin.delivermore.views.report.PeriodSummaryView;
+import ca.admin.delivermore.views.restaurants.MenuDataTablesView;
 import ca.admin.delivermore.views.restaurants.RestInvoiceView;
 import ca.admin.delivermore.views.restaurants.RestPayoutView;
 import ca.admin.delivermore.views.restaurants.RestView;
@@ -145,6 +147,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
         //only add the menu folder if the user has access to at least one of the sub views
         if (checkAccess(DriversView.class)
                 || checkAccess(RestView.class)
+            || checkAccess(MenuDataTablesView.class)
             || checkAccess(StagedRestaurantOrdersView.class)
             || checkAccess(TEAMS_VIEW_CLASS)
             || checkAccess(TASK_LIST_VIEW_CLASS)
@@ -153,6 +156,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             || checkAccess(GIFT_CARD_VIEW_CLASS)
                 || checkAccess(TabletAssetsView.class)
                 || checkAccess(TabletAssetHistoryView.class)
+                || checkAccess(TabletOrderMonitoringView.class)
             || checkAccess(TASKS_VIEW_CLASS)
             || checkAccess(LOG_VIEWER_VIEW_CLASS)) {
             SideNavItem utilities = new SideNavItem("Utilities");
@@ -178,6 +182,10 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 //SideNavItem restMenu = new SideNavItem("Restaurants", RestView.class, "la la-store-alt");
                 utilities.addItem(restMenu);
             }
+            if (checkAccess(MenuDataTablesView.class)) {
+                SideNavItem menuDataTablesMenu = new SideNavItem("Menu Data Tables", MenuDataTablesView.class, VaadinIcon.TABLE.create());
+                utilities.addItem(menuDataTablesMenu);
+            }
             if (checkAccess(StagedRestaurantOrdersView.class)) {
                 SideNavItem approvalsMenu = new SideNavItem("Order Approvals", StagedRestaurantOrdersView.class, VaadinIcon.CHECK_SQUARE_O.create());
                 utilities.addItem(approvalsMenu);
@@ -199,6 +207,10 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             if (checkAccess(TabletAssetHistoryView.class)) {
                 SideNavItem assetListMenu = new SideNavItem("Asset History Browser", TabletAssetHistoryView.class, VaadinIcon.TABLET.create());
                 utilities.addItem(assetListMenu);
+            }
+            if (checkAccess(TabletOrderMonitoringView.class)) {
+                SideNavItem monitorMenu = new SideNavItem("Tablet Monitor", TabletOrderMonitoringView.class, VaadinIcon.DASHBOARD.create());
+                utilities.addItem(monitorMenu);
             }
             if(oAuth2Configuration.isConfigured()){
                 if (checkAccess(QBOConnectView.class)) {

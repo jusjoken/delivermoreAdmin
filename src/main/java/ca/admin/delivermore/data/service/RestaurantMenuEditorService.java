@@ -78,12 +78,17 @@ public class RestaurantMenuEditorService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String MENU_EDITOR_SETTINGS_SECTION = "menu_editor";
+    private static final String CHECKOUT_SETTINGS_SECTION = "checkout";
     private static final String ITEM_TAG_OPTIONS_SETTING = "item_tag_options";
     private static final String ITEM_ALLERGEN_OPTIONS_SETTING = "item_allergen_options";
     private static final String MAJOR_GROUP_OPTIONS_SETTING = "major_group_options";
     private static final String TAXATION_CATEGORY_OPTIONS_SETTING = "taxation_category_options";
     private static final String SERVICE_FEE_TAX_SETTING = "service_fee_tax";
     private static final String DELIVERY_FEE_TAX_SETTING = "delivery_fee_tax";
+    private static final String CHECKOUT_SERVICE_FEE_RATE_SETTING = "service_fee_rate";
+    private static final String CHECKOUT_DELIVERY_FEE_SETTING = "delivery_fee";
+    private static final String CHECKOUT_DELIVERY_FEE_INFO_TEXT_SETTING = "delivery_fee_info_text";
+    private static final String CHECKOUT_FEES_TAXES_INFO_TEXT_SETTING = "fees_taxes_info_text";
     private static final String ITEM_TAXATION_CATEGORY_SETTING_PREFIX = "item_taxation_category_";
     private static final String OPTION_GROUP_MAJOR_GROUP_SETTING_PREFIX = "option_group_major_group_";
     private static final String OPTION_GROUP_TAXATION_CATEGORY_SETTING_PREFIX = "option_group_taxation_category_";
@@ -161,6 +166,24 @@ public class RestaurantMenuEditorService {
 
     public NamedTaxRate getDeliveryFeeTaxRate() {
         return getNamedTaxRateSetting(DELIVERY_FEE_TAX_SETTING);
+    }
+
+    public double getCheckoutServiceFeeRate() {
+        double rate = getDoubleSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_SERVICE_FEE_RATE_SETTING, 0d);
+        double normalized = rate > 1d ? rate / 100d : rate;
+        return normalizeDecimal(normalized, 6);
+    }
+
+    public double getCheckoutDeliveryFee() {
+        return normalizeDecimal(getDoubleSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_DELIVERY_FEE_SETTING, 0d), 2);
+    }
+
+    public String getCheckoutDeliveryFeeInfoText() {
+        return getStringSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_DELIVERY_FEE_INFO_TEXT_SETTING);
+    }
+
+    public String getCheckoutFeesTaxesInfoText() {
+        return getStringSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_FEES_TAXES_INFO_TEXT_SETTING);
     }
 
     public List<TaxationCategoryRate> getTaxationCategoryRates(List<String> defaults) {
@@ -327,6 +350,44 @@ public class RestaurantMenuEditorService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutServiceFeeRate(double value) {
+        double normalized = Math.max(0d, value);
+        saveDoubleSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_SERVICE_FEE_RATE_SETTING,
+                "Global checkout service fee rate as decimal (0.055 = 5.5%)",
+                normalizeDecimal(normalized, 6));
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutDeliveryFee(double value) {
+        double normalized = Math.max(0d, value);
+        saveDoubleSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_DELIVERY_FEE_SETTING,
+                "Global checkout delivery fee amount",
+                normalizeDecimal(normalized, 2));
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutDeliveryFeeInfoText(String value) {
+        saveStringSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_DELIVERY_FEE_INFO_TEXT_SETTING,
+                "Checkout delivery fee information popup text",
+                value);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutFeesTaxesInfoText(String value) {
+        saveStringSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_FEES_TAXES_INFO_TEXT_SETTING,
+                "Checkout fees and taxes information popup text",
+                value);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     public void saveTaxationCategoryRates(List<TaxationCategoryRate> values) {
         List<String> encoded = new ArrayList<>();
         if (values != null) {
@@ -449,6 +510,41 @@ public class RestaurantMenuEditorService {
                 .toList();
     }
 
+    private double getDoubleSetting(String section, String settingName, double defaultValue) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            return defaultValue;
+        }
+        String raw = trimToNull(setting.getValue());
+        if (raw == null) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private void saveDoubleSetting(String section, String settingName, String description, double value) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            setting = new SettingEntity();
+            setting.setSection(section);
+            setting.setName(settingName);
+            setting.setDescription(description);
+            setting.setValueType(SettingEntity.ValueType.DOUBLE);
+        }
+        setting.setValue(value);
+        settingRepository.save(setting);
+    }
+
+    private double normalizeDecimal(double value, int scale) {
+        return BigDecimal.valueOf(value)
+                .setScale(scale, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
     private void saveListSetting(String settingName, String description, List<String> values) {
         SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, settingName);
         if (setting == null) {
@@ -478,11 +574,39 @@ public class RestaurantMenuEditorService {
         return trimToNull(setting.getValue());
     }
 
+    private String getStringSetting(String section, String settingName) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            return null;
+        }
+        return trimToNull(setting.getValue());
+    }
+
     private void saveStringSetting(String settingName, String description, String value) {
         SettingEntity setting = settingRepository.findBySectionAndName(MENU_EDITOR_SETTINGS_SECTION, settingName);
         if (setting == null) {
             setting = new SettingEntity();
             setting.setSection(MENU_EDITOR_SETTINGS_SECTION);
+            setting.setName(settingName);
+            setting.setDescription(description);
+            setting.setValueType(SettingEntity.ValueType.STRING);
+        }
+
+        String cleaned = trimToNull(value);
+        if (cleaned == null) {
+            settingRepository.delete(setting);
+            return;
+        }
+
+        setting.setValue(cleaned);
+        settingRepository.save(setting);
+    }
+
+    private void saveStringSetting(String section, String settingName, String description, String value) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            setting = new SettingEntity();
+            setting.setSection(section);
             setting.setName(settingName);
             setting.setDescription(description);
             setting.setValueType(SettingEntity.ValueType.STRING);
@@ -550,6 +674,22 @@ public class RestaurantMenuEditorService {
             return restaurants.getFirst();
         }
         return null;
+    }
+
+    public List<Restaurant> listEffectiveRestaurants() {
+        List<Restaurant> restaurants = restaurantRepository.getEffectiveRestaurants(LocalDate.now());
+        if (restaurants.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashMap<Long, Restaurant> byRestaurantId = new LinkedHashMap<>();
+        for (Restaurant value : restaurants) {
+            if (value == null || value.getRestaurantId() == null) {
+                continue;
+            }
+            byRestaurantId.putIfAbsent(value.getRestaurantId(), value);
+        }
+        return new ArrayList<>(byRestaurantId.values());
     }
 
     public List<MenuVersionSummary> listVersionSummaries(Long restaurantId) {
