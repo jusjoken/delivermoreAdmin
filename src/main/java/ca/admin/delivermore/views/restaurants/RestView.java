@@ -25,6 +25,7 @@ import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.listbox.ListBox;
 import com.vaadin.flow.component.menubar.MenuBar;
 import com.vaadin.flow.component.menubar.MenuBarVariant;
@@ -44,11 +45,14 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoIcon;
 
 import ca.admin.delivermore.collector.data.entity.Restaurant;
+import ca.admin.delivermore.components.custom.MenuImagePickerDialog;
 import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.collector.data.tookan.Team;
 import ca.admin.delivermore.components.custom.ListEditor;
 import ca.admin.delivermore.components.custom.LocationChoice;
 import ca.admin.delivermore.components.custom.LocationChoiceChangedListener;
+import ca.admin.delivermore.data.service.MenuImageAssetService;
+import ca.admin.delivermore.data.service.MenuImageSlot;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
@@ -105,6 +109,10 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private IntegerField dialogRestFormId = UIUtilities.getIntegerField("Form Id",false,0);
 
     private Select<Team> dialogRestLocation = new Select<>();
+    private Image dialogRestLogoPreview = new Image();
+    private Button dialogRestLogoSelectButton = new Button("Select logo");
+    private Button dialogRestLogoRemoveButton = new Button("Remove logo");
+    private Long dialogRestLogoImageAssetId;
 
     private ListEditor dialogRestEmailEditor = new ListEditor();
 
@@ -128,12 +136,17 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
     RestaurantRepository restaurantRepository;
     private final RestaurantMenuEditorService restaurantMenuEditorService;
+    private final MenuImageAssetService menuImageAssetService;
 
     private Logger log = LoggerFactory.getLogger(RestView.class);
 
-    public RestView(RestaurantRepository restaurantRepository, RestaurantMenuEditorService restaurantMenuEditorService) {
+    public RestView(
+            RestaurantRepository restaurantRepository,
+            RestaurantMenuEditorService restaurantMenuEditorService,
+            MenuImageAssetService menuImageAssetService) {
         this.restaurantRepository = restaurantRepository;
         this.restaurantMenuEditorService = restaurantMenuEditorService;
+        this.menuImageAssetService = menuImageAssetService;
         log.info("Configuring the dialog");
         dialogConfigure();
         configureNewRestDialog();
@@ -574,6 +587,31 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestLocation.addValueChangeListener(e ->{
             if(validationEnabled) dialogValidate();
         });
+
+        dialogRestLogoPreview.setAlt("Restaurant logo preview");
+        dialogRestLogoPreview.setWidth("140px");
+        dialogRestLogoPreview.getStyle().set("height", "140px");
+        dialogRestLogoPreview.getStyle().set("object-fit", "cover");
+        dialogRestLogoPreview.getStyle().set("border", "1px solid var(--lumo-contrast-20pct)");
+        dialogRestLogoPreview.getStyle().set("border-radius", "8px");
+
+        dialogRestLogoSelectButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        dialogRestLogoSelectButton.addClickListener(e -> openLogoPickerDialog());
+        dialogRestLogoRemoveButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY_INLINE);
+        dialogRestLogoRemoveButton.addClickListener(e -> {
+            dialogRestLogoImageAssetId = null;
+            refreshLogoPreview();
+            if (validationEnabled) {
+                dialogValidate();
+            }
+        });
+        VerticalLayout logoLayout = new VerticalLayout(
+                new Span("Restaurant logo (square)"),
+                dialogRestLogoPreview,
+                new HorizontalLayout(dialogRestLogoSelectButton, dialogRestLogoRemoveButton));
+        logoLayout.setPadding(false);
+        logoLayout.setSpacing(true);
+
         HorizontalLayout locationFieldsLayout = UIUtilities.getHorizontalLayout(false,true,false);
         locationFieldsLayout.add(dialogRestLocation);
 
@@ -725,7 +763,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         fieldsLayout6.add(dialogRestGlobalAuthCode,dialogRestFetchMenuKey,dialogRestFormId);
 
         VerticalLayout otherFieldsLayout = UIUtilities.getVerticalLayout();
-        otherFieldsLayout.add(locationFieldsLayout,commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c,fieldsLayout6);
+        otherFieldsLayout.add(logoLayout,locationFieldsLayout,commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c,fieldsLayout6);
         dialogTabEmail = new Tab(tabEmailIcon, new Span("Email"));
         dialogTabOther = new Tab(tabOtherIcon, new Span("Other"));
         dialogTabSheet.add(dialogTabEmail, dialogRestEmailEditor);
@@ -833,6 +871,9 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             dialogRestFormId.setValue(Math.toIntExact(selectedRestaurant.getFormId()));
         }
 
+        dialogRestLogoImageAssetId = selectedRestaurant.getLogoImageAssetId();
+        refreshLogoPreview();
+
         dialogRestEmailEditor.setValue(selectedRestaurant.getEmail());
     }
 
@@ -866,6 +907,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateCheckbox(dialogRestAutoApproveOrders,selectedRestaurant.getAutoApproveOrders());
                 validateCheckbox(dialogRestSendToTablet,selectedRestaurant.getSendToTablet());
                 validateCheckbox(dialogRestSendToTookan,selectedRestaurant.getSendToTookan());
+                validateLongValue(dialogRestLogoImageAssetId, selectedRestaurant.getLogoImageAssetId());
                 validateTextField(dialogRestGlobalAuthCode, selectedRestaurant.getGlobalAuthCode());
                 validateTextField(dialogRestFetchMenuKey, selectedRestaurant.getFetchMenuKey());
                 validateIntegerField(dialogRestFormId, Math.toIntExact(selectedRestaurant.getFormId()));
@@ -970,6 +1012,14 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }
     }
 
+    private void validateLongValue(Long fieldValue, Long value) {
+        if ((fieldValue == null && value == null) || (fieldValue != null && fieldValue.equals(value))) {
+            return;
+        }
+        hasChangedValues = Boolean.TRUE;
+        hasChangedValuesOther = Boolean.TRUE;
+    }
+
     private void validateEmailField(ListBox<?> field, String fieldValue, String value){
         String normalizedFieldValue = fieldValue == null ? "" : fieldValue;
         String normalizedValue = value == null ? "" : value;
@@ -1045,6 +1095,8 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             selectedRestaurant.setFormId(Long.valueOf(dialogRestFormId.getValue()));
         }
 
+        selectedRestaurant.setLogoImageAssetId(dialogRestLogoImageAssetId);
+
 
         selectedRestaurant.setEmail(dialogRestEmailEditor.getValue());
 
@@ -1062,6 +1114,30 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         //refresh
         refreshGrid();
         restDialog.close();
+    }
+
+    private void openLogoPickerDialog() {
+        MenuImagePickerDialog picker = new MenuImagePickerDialog(
+                menuImageAssetService,
+                MenuImageSlot.RESTAURANT_LOGO,
+                dialogRestLogoImageAssetId,
+                selectedId -> {
+                    dialogRestLogoImageAssetId = selectedId;
+                    refreshLogoPreview();
+                    if (validationEnabled) {
+                        dialogValidate();
+                    }
+                });
+        picker.open();
+    }
+
+    private void refreshLogoPreview() {
+        String imageUrl = menuImageAssetService.getImageUrl(dialogRestLogoImageAssetId);
+        if (imageUrl == null) {
+            dialogRestLogoPreview.setSrc("");
+            return;
+        }
+        dialogRestLogoPreview.setSrc(imageUrl);
     }
 
     private Integer getDoubleAsInteger(Double value){

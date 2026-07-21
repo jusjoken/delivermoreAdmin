@@ -11,9 +11,10 @@
 
     <properties>
         <java.version>21</java.version>
-        <vaadin.version>25.0.7</vaadin.version>
+        <vaadin.version>25.1.5</vaadin.version>
         <selenium.version>4.23.0</selenium.version>
         <jackson.version>2.21.1</jackson.version>
+        <commons-io.version>2.20.0</commons-io.version>
         <version.major>1</version.major>
         <version.minor>7</version.minor>
     </properties>
@@ -104,9 +105,9 @@
             <artifactId>vaadin-spring-boot-starter</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-dev</artifactId>
-            <optional>true</optional>
+            <groupId>com.flowingcode.vaadin.addons</groupId>
+            <artifactId>image-crop-addon</artifactId>
+            <version>1.2.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -149,6 +150,7 @@
         <dependency>
             <groupId>commons-io</groupId>
             <artifactId>commons-io</artifactId>
+            <version>${commons-io.version}</version>
         </dependency>
 
         <dependency>
@@ -159,11 +161,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -435,6 +432,25 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>development</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.vaadin</groupId>
+                    <artifactId>vaadin-dev</artifactId>
+                    <optional>true</optional>
+                </dependency>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-devtools</artifactId>
+                    <optional>true</optional>
+                </dependency>
+            </dependencies>
+        </profile>
+
         <profile>
             <!-- Production mode is activated using -Pproduction -->
             <id>production</id>

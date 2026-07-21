@@ -28,6 +28,7 @@ import com.vaadin.flow.component.grid.dnd.GridDropLocation;
 import com.vaadin.flow.component.grid.dnd.GridDropMode;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -58,6 +59,9 @@ import ca.admin.delivermore.collector.data.entity.RestaurantMenuOption;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuOptionGroup;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuVersion;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuVersion.WorkflowStatus;
+import ca.admin.delivermore.components.custom.MenuImagePickerDialog;
+import ca.admin.delivermore.data.service.MenuImageAssetService;
+import ca.admin.delivermore.data.service.MenuImageSlot;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
@@ -108,6 +112,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             "Salt (g)");
 
     private final RestaurantMenuEditorService restaurantMenuEditorService;
+    private final MenuImageAssetService menuImageAssetService;
 
     // UI Components
     private final H3 title = new H3("Restaurant Menu Editor");
@@ -118,6 +123,8 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     private final Button previewButton = new Button("Preview & Test Ordering");
     private final MenuBar dataTablesMenu;
     private final Button refreshButton = new Button("Refresh");
+    private final Image menuHeaderPreview = new Image();
+    private final Button menuHeaderSelectButton = new Button("Select Header Image");
     
     // Left pane: TreeGrid hierarchy
     private final TreeGrid<MenuTreeNode> editorTree = new TreeGrid<>();
@@ -174,11 +181,15 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         private final Map<String, String> nutritionalValues = new LinkedHashMap<>();
     }
 
-    public RestaurantMenuEditorView(RestaurantMenuEditorService restaurantMenuEditorService) {
+    public RestaurantMenuEditorView(
+            RestaurantMenuEditorService restaurantMenuEditorService,
+            MenuImageAssetService menuImageAssetService) {
         this.restaurantMenuEditorService = restaurantMenuEditorService;
+        this.menuImageAssetService = menuImageAssetService;
         this.dataTablesMenu = new MenuDataTablesMenuBar(restaurantMenuEditorService, this::refreshItemSettingsOptionLists);
         setSizeFull();
         configureHeader();
+        configureMenuHeaderControls();
         configureRestaurantSelector();
         configureEditorTree();
         configureChoiceLibrary();
@@ -263,11 +274,79 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         actions.setAlignItems(FlexComponent.Alignment.END);
         actions.setWidthFull();
 
-        VerticalLayout top = new VerticalLayout(backButton, title, restaurantRow, statusBanner, actions);
+        HorizontalLayout menuHeaderActions = new HorizontalLayout(menuHeaderSelectButton);
+        menuHeaderActions.setSpacing(true);
+        menuHeaderActions.setPadding(false);
+        VerticalLayout menuHeaderRow = new VerticalLayout(
+            new Span("Menu Header Image (16:9). If empty, preview uses restaurant logo."),
+                menuHeaderPreview,
+                menuHeaderActions);
+        menuHeaderRow.setPadding(false);
+        menuHeaderRow.setSpacing(true);
+
+        VerticalLayout top = new VerticalLayout(backButton, title, restaurantRow, statusBanner, menuHeaderRow, actions);
         top.setPadding(false);
         top.setSpacing(true);
         top.setWidthFull();
         return top;
+    }
+
+    private void configureMenuHeaderControls() {
+        menuHeaderPreview.setAlt("Menu header image preview");
+        menuHeaderPreview.setWidth("280px");
+        menuHeaderPreview.getStyle().set("height", "158px");
+        menuHeaderPreview.getStyle().set("object-fit", "cover");
+        menuHeaderPreview.getStyle().set("border", "1px solid var(--lumo-contrast-20pct)");
+        menuHeaderPreview.getStyle().set("border-radius", "8px");
+        menuHeaderPreview.getStyle().set("cursor", "pointer");
+        menuHeaderPreview.getElement().setAttribute("title", "Click to select or edit header image");
+        menuHeaderPreview.addClickListener(event -> openMenuHeaderImagePicker());
+
+        menuHeaderSelectButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        menuHeaderSelectButton.addClickListener(event -> openMenuHeaderImagePicker());
+
+    }
+
+    private void openMenuHeaderImagePicker() {
+        if (currentMenuVersion == null) {
+            showError("No menu version loaded");
+            return;
+        }
+        MenuImagePickerDialog picker = new MenuImagePickerDialog(
+                menuImageAssetService,
+                MenuImageSlot.MENU_HEADER,
+                currentMenuVersion.getHeaderImageAssetId(),
+                selectedId -> {
+                    currentMenuVersion.setHeaderImageAssetId(selectedId);
+                    restaurantMenuEditorService.saveMenuVersion(currentMenuVersion);
+                    refreshMenuHeaderPreview();
+                    showSuccess("Menu header updated");
+                });
+        picker.open();
+    }
+
+    private void refreshMenuHeaderPreview() {
+        Long headerImageAssetId = currentMenuVersion == null ? null : currentMenuVersion.getHeaderImageAssetId();
+        Long logoImageAssetId = restaurant == null ? null : restaurant.getLogoImageAssetId();
+        Long assetIdToPreview = headerImageAssetId != null ? headerImageAssetId : logoImageAssetId;
+
+        if (headerImageAssetId != null) {
+            menuHeaderPreview.setWidth("280px");
+            menuHeaderPreview.getStyle().set("height", "158px");
+        } else if (logoImageAssetId != null) {
+            menuHeaderPreview.setWidth("280px");
+            menuHeaderPreview.getStyle().set("height", "280px");
+        } else {
+            menuHeaderPreview.setWidth("280px");
+            menuHeaderPreview.getStyle().set("height", "158px");
+        }
+
+        String imageUrl = menuImageAssetService.getImageUrl(assetIdToPreview);
+        if (imageUrl == null || imageUrl.isBlank()) {
+            menuHeaderPreview.setSrc("");
+            return;
+        }
+        menuHeaderPreview.setSrc(imageUrl);
     }
 
     private void refreshSelectableRestaurants() {
@@ -851,6 +930,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             expandedItemIds.clear();
             editorTree.getDataProvider().refreshAll();
             refreshChoiceLibrary();
+            refreshMenuHeaderPreview();
             updateBanner();
             updateActionStates();
             return;
@@ -912,6 +992,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         editorTree.getDataProvider().refreshAll();
         restoreTreeUiState(treeUiState);
         refreshChoiceLibrary();
+        refreshMenuHeaderPreview();
         
         updateBanner();
         updateActionStates();
@@ -930,6 +1011,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         expandedItemIds.clear();
         editorTree.getDataProvider().refreshAll();
         refreshChoiceLibrary();
+        refreshMenuHeaderPreview();
         updateActionStates();
     }
 
@@ -972,17 +1054,29 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         previewButton.setEnabled(currentMenuVersion != null && restaurantId != null);
         dataTablesMenu.setEnabled(restaurantId != null);
         refreshButton.setEnabled(restaurantId != null);
+        menuHeaderSelectButton.setEnabled(currentMenuVersion != null);
         restaurantSelector.setEnabled(!selectableRestaurants.isEmpty());
     }
 
     private Div buildNameCell(MenuTreeNode node) {
         Div cell = new Div();
         cell.getStyle().set("display", "flex");
-        cell.getStyle().set("flex-direction", "column");
-        cell.getStyle().set("line-height", "1.15");
+        cell.getStyle().set("align-items", "flex-start");
+        cell.getStyle().set("gap", "8px");
+
+        Long imageAssetId = getTreeNodeImageAssetId(node);
+        if (imageAssetId != null || CATEGORY_TYPE.equals(node.type()) || ITEM_TYPE.equals(node.type())) {
+            cell.add(buildTreeImageButton(node, imageAssetId));
+        }
+
+        Div textWrap = new Div();
+        textWrap.getStyle().set("display", "flex");
+        textWrap.getStyle().set("flex-direction", "column");
+        textWrap.getStyle().set("line-height", "1.15");
+        textWrap.getStyle().set("min-width", "0");
 
         Span nameSpan = new Span(node.displayName());
-        cell.add(nameSpan);
+        textWrap.add(nameSpan);
 
         String description = null;
         if (CATEGORY_TYPE.equals(node.type())) {
@@ -997,10 +1091,91 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             Span subtitle = new Span(description.trim());
             subtitle.getStyle().set("font-size", "var(--lumo-font-size-xs)");
             subtitle.getStyle().set("color", "var(--lumo-secondary-text-color)");
-            cell.add(subtitle);
+            textWrap.add(subtitle);
         }
 
+        cell.add(textWrap);
+
         return cell;
+    }
+
+    private Long getTreeNodeImageAssetId(MenuTreeNode node) {
+        if (CATEGORY_TYPE.equals(node.type())) {
+            return ((RestaurantMenuCategory) node.data()).getImageAssetId();
+        }
+        if (ITEM_TYPE.equals(node.type())) {
+            return ((RestaurantMenuItem) node.data()).getImageAssetId();
+        }
+        return null;
+    }
+
+    private Button buildTreeImageButton(MenuTreeNode node, Long imageAssetId) {
+        Button button = new Button();
+        button.addClickListener(event -> openImagePickerForNode(node));
+        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        button.getStyle().set("padding", "0");
+        button.getStyle().set("min-width", "0");
+        button.getStyle().set("border-radius", "6px");
+        button.getElement().setAttribute("aria-label", "Edit image");
+        button.getElement().setAttribute("title", imageAssetId == null ? "Select image" : "Edit image");
+
+        Div thumb = new Div();
+        thumb.getStyle().set("width", "42px");
+        thumb.getStyle().set("height", "24px");
+        thumb.getStyle().set("border-radius", "6px");
+        thumb.getStyle().set("overflow", "hidden");
+        thumb.getStyle().set("border", "1px solid var(--lumo-contrast-20pct)");
+        thumb.getStyle().set("background", "var(--lumo-contrast-5pct)");
+        thumb.getStyle().set("flex-shrink", "0");
+
+        String imageUrl = menuImageAssetService.getImageUrl(imageAssetId);
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            Image thumbImage = new Image(imageUrl, node.displayName() + " image thumbnail");
+            thumbImage.setWidth("42px");
+            thumbImage.getStyle().set("height", "24px");
+            thumbImage.getStyle().set("object-fit", "cover");
+            thumb.add(thumbImage);
+        } else {
+            thumb.getStyle().set("background-image",
+                    "linear-gradient(135deg, var(--lumo-contrast-10pct) 25%, transparent 25%, transparent 50%, var(--lumo-contrast-10pct) 50%, var(--lumo-contrast-10pct) 75%, transparent 75%, transparent)");
+            thumb.getStyle().set("background-size", "8px 8px");
+        }
+
+        button.setIcon(thumb);
+        return button;
+    }
+
+    private void openImagePickerForNode(MenuTreeNode node) {
+        if (CATEGORY_TYPE.equals(node.type())) {
+            RestaurantMenuCategory category = (RestaurantMenuCategory) node.data();
+            MenuImagePickerDialog picker = new MenuImagePickerDialog(
+                    menuImageAssetService,
+                    MenuImageSlot.MENU_GROUP,
+                    category.getImageAssetId(),
+                    selectedId -> {
+                        category.setImageAssetId(selectedId);
+                        restaurantMenuEditorService.saveCategory(category);
+                        refreshEditorData();
+                        showSuccess("Group image updated");
+                    });
+            picker.open();
+            return;
+        }
+
+        if (ITEM_TYPE.equals(node.type())) {
+            RestaurantMenuItem item = (RestaurantMenuItem) node.data();
+            MenuImagePickerDialog picker = new MenuImagePickerDialog(
+                    menuImageAssetService,
+                    MenuImageSlot.MENU_ITEM,
+                    item.getImageAssetId(),
+                    selectedId -> {
+                        item.setImageAssetId(selectedId);
+                        restaurantMenuEditorService.saveItem(item);
+                        refreshEditorData();
+                        showSuccess("Item image updated");
+                    });
+            picker.open();
+        }
     }
 
     private FlexLayout buildOptionsBadges(MenuTreeNode node) {
@@ -1208,7 +1383,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         final NumberField priceField;
         final ComboBox<String> itemTaxationCategoryField;
-
         if (CATEGORY_TYPE.equals(selected.type())) {
             RestaurantMenuCategory category = (RestaurantMenuCategory) selected.data();
             nameField.setValue(category.getName() == null ? "" : category.getName());

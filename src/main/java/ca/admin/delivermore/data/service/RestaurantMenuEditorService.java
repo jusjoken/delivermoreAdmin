@@ -742,6 +742,11 @@ public class RestaurantMenuEditorService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    public RestaurantMenuVersion saveMenuVersion(RestaurantMenuVersion menuVersion) {
+        return restaurantMenuVersionRepository.save(menuVersion);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     public RestaurantMenuCategory duplicateCategory(Long menuVersionId, Long categoryId) {
         RestaurantMenuCategory source = restaurantMenuCategoryEditorRepository.findById(categoryId)
                 .orElseThrow(() -> new IllegalStateException("Category not found: " + categoryId));

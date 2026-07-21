@@ -21,6 +21,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.H4;
+import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.masterdetaillayout.MasterDetailLayout;
@@ -300,9 +301,47 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             return;
         }
 
+        Component menuHero = buildMenuHero();
+        if (menuHero != null) {
+            menuContent.add(menuHero);
+        }
+
         for (CategoryData category : previewData.categories()) {
             menuContent.add(buildCategorySection(category));
         }
+    }
+
+    private Component buildMenuHero() {
+        String heroImageUrl = previewData.menuHeaderImageUrl();
+        if (heroImageUrl == null || heroImageUrl.isBlank()) {
+            heroImageUrl = previewData.restaurantLogoImageUrl();
+        }
+        if (heroImageUrl == null || heroImageUrl.isBlank()) {
+            return null;
+        }
+
+        HorizontalLayout hero = new HorizontalLayout();
+        hero.setWidthFull();
+        hero.setAlignItems(FlexComponent.Alignment.CENTER);
+        hero.getStyle().set("border", "1px solid var(--lumo-contrast-10pct)");
+        hero.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
+        hero.getStyle().set("padding", "var(--lumo-space-s)");
+        hero.getStyle().set("background", "var(--lumo-contrast-5pct)");
+
+        Image image = new Image(heroImageUrl, "Menu header image");
+        image.setWidth("180px");
+        image.getStyle().set("border-radius", "10px");
+        image.getStyle().set("object-fit", "cover");
+
+        VerticalLayout text = new VerticalLayout();
+        text.setPadding(false);
+        text.setSpacing(false);
+        text.add(new H3(previewData.restaurant().getName()));
+        text.add(createMutedText("Preview of customer-facing menu content"));
+
+        hero.add(image, text);
+        hero.expand(text);
+        return hero;
     }
 
     private Component buildCategorySection(CategoryData category) {
@@ -329,11 +368,34 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         grid.getStyle().set("gap", "12px");
         grid.setWidthFull();
 
+        if (category.imageUrl() != null && !category.imageUrl().isBlank()) {
+            grid.add(buildCategoryImageTile(category.imageUrl(), category.name()));
+        }
+
         for (ItemData item : category.items()) {
             grid.add(buildItemCard(item));
         }
         section.add(grid);
         return section;
+    }
+
+    private Component buildCategoryImageTile(String imageUrl, String categoryName) {
+        VerticalLayout tile = new VerticalLayout();
+        tile.setPadding(false);
+        tile.setSpacing(false);
+        tile.setWidthFull();
+        tile.getStyle().set("border", "2px dashed var(--lumo-contrast-20pct)");
+        tile.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
+        tile.getStyle().set("background", "var(--lumo-base-color)");
+        tile.getStyle().set("overflow", "hidden");
+
+        Image image = new Image(imageUrl, categoryName + " image");
+        image.setWidthFull();
+        image.getStyle().set("aspect-ratio", "16 / 9");
+        image.getStyle().set("object-fit", "cover");
+
+        tile.add(image);
+        return tile;
     }
 
     private Component buildItemCard(ItemData item) {
@@ -375,18 +437,40 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         name.getStyle().set("font-weight", "700");
         name.getStyle().set("font-size", "1.05rem");
 
-        Span description = new Span(item.description() == null ? "" : item.description());
-        description.getStyle().set("color", "var(--lumo-secondary-text-color)");
-        description.getStyle().set("font-size", "var(--lumo-font-size-s)");
-
-        text.add(name, description);
-
         Span price = new Span(formatCurrency(minimumDisplayPrice(item)));
         price.getStyle().set("font-weight", "700");
         price.getStyle().set("white-space", "nowrap");
 
-        top.add(text, price);
-        top.expand(text);
+        top.add(name, price);
+        top.expand(name);
+
+        Span description = new Span(item.description() == null ? "" : item.description());
+        description.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        description.getStyle().set("font-size", "var(--lumo-font-size-s)");
+
+        text.add(top);
+
+        if (item.imageUrl() != null && !item.imageUrl().isBlank()) {
+            Image itemImage = new Image(item.imageUrl(), item.name() + " image");
+            itemImage.setWidthFull();
+            itemImage.getStyle().set("aspect-ratio", "16 / 9");
+            itemImage.getStyle().set("object-fit", "cover");
+            itemImage.getStyle().set("border-radius", "8px");
+            text.add(itemImage);
+        }
+
+        HorizontalLayout detailRow = new HorizontalLayout();
+        detailRow.setWidthFull();
+        detailRow.setAlignItems(FlexComponent.Alignment.START);
+
+        VerticalLayout descriptionWrap = new VerticalLayout(description);
+        descriptionWrap.setPadding(false);
+        descriptionWrap.setSpacing(false);
+        descriptionWrap.setWidthFull();
+        detailRow.add(descriptionWrap);
+        detailRow.expand(descriptionWrap);
+
+        text.add(detailRow);
 
         HorizontalLayout badges = new HorizontalLayout();
         badges.setSpacing(true);
@@ -397,7 +481,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         if (item.tags().contains("HOT")) {
             badges.add(createBadge("Hot", "contrast"));
         }
-        card.add(top, badges);
+        card.add(text, badges);
         return card;
     }
 

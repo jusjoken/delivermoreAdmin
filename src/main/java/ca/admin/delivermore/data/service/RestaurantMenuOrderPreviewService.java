@@ -30,6 +30,8 @@ public class RestaurantMenuOrderPreviewService {
     public record PreviewData(
             Restaurant restaurant,
             RestaurantMenuVersion menuVersion,
+            String restaurantLogoImageUrl,
+            String menuHeaderImageUrl,
             List<CategoryData> categories,
         Map<String, TaxRateConfig> taxationRates,
         TaxRateConfig serviceFeeTax,
@@ -44,6 +46,7 @@ public class RestaurantMenuOrderPreviewService {
             Long id,
             String name,
             String description,
+            String imageUrl,
             List<ItemData> items) {
     }
 
@@ -51,6 +54,7 @@ public class RestaurantMenuOrderPreviewService {
             Long id,
             String name,
             String description,
+            String imageUrl,
             double basePrice,
             String taxationCategory,
             boolean outOfStock,
@@ -88,9 +92,13 @@ public class RestaurantMenuOrderPreviewService {
     }
 
     private final RestaurantMenuEditorService restaurantMenuEditorService;
+    private final MenuImageAssetService menuImageAssetService;
 
-    public RestaurantMenuOrderPreviewService(RestaurantMenuEditorService restaurantMenuEditorService) {
+    public RestaurantMenuOrderPreviewService(
+            RestaurantMenuEditorService restaurantMenuEditorService,
+            MenuImageAssetService menuImageAssetService) {
         this.restaurantMenuEditorService = restaurantMenuEditorService;
+        this.menuImageAssetService = menuImageAssetService;
     }
 
     public PreviewData loadPreviewData(Long restaurantId) {
@@ -110,7 +118,12 @@ public class RestaurantMenuOrderPreviewService {
                     .stream()
                     .map(item -> toItemData(menuVersion, category, item))
                     .toList();
-            categories.add(new CategoryData(category.getId(), category.getName(), category.getDescription(), items));
+                categories.add(new CategoryData(
+                    category.getId(),
+                    category.getName(),
+                    category.getDescription(),
+                    menuImageAssetService.getImageUrl(category.getImageAssetId()),
+                    items));
         }
 
         Map<String, TaxRateConfig> taxationRates = new LinkedHashMap<>();
@@ -152,6 +165,8 @@ public class RestaurantMenuOrderPreviewService {
         return new PreviewData(
                 restaurant,
                 menuVersion,
+            menuImageAssetService.getImageUrl(restaurant.getLogoImageAssetId()),
+            menuImageAssetService.getImageUrl(menuVersion.getHeaderImageAssetId()),
                 categories,
                 taxationRates,
             new TaxRateConfig(
@@ -184,6 +199,7 @@ public class RestaurantMenuOrderPreviewService {
                 item.getId(),
                 item.getName(),
                 item.getDescription(),
+                menuImageAssetService.getImageUrl(item.getImageAssetId()),
                 basePrice == null ? 0d : basePrice,
                 defaultTaxationCategory(restaurantMenuEditorService.getItemTaxationCategory(item.getId())),
                 settings.outOfStock(),
