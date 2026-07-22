@@ -38,8 +38,7 @@ public class RestaurantMenuOrderPreviewService {
         TaxRateConfig deliveryFeeTax,
             String deliveryFeeInfoText,
             String feesTaxesInfoText,
-            double serviceFeeRate,
-            double deliveryFee) {
+            double serviceFeeRate) {
     }
 
     public record CategoryData(
@@ -177,8 +176,7 @@ public class RestaurantMenuOrderPreviewService {
                 deliveryFeeTaxPct),
                 restaurantMenuEditorService.getCheckoutDeliveryFeeInfoText(),
                 restaurantMenuEditorService.getCheckoutFeesTaxesInfoText(),
-                restaurantMenuEditorService.getCheckoutServiceFeeRate(),
-                restaurantMenuEditorService.getCheckoutDeliveryFee());
+                restaurantMenuEditorService.getCheckoutServiceFeeRate());
     }
 
     private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuCategory category, RestaurantMenuItem item) {

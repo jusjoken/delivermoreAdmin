@@ -59,9 +59,11 @@ import ca.admin.delivermore.collector.data.entity.RestaurantMenuOption;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuOptionGroup;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuVersion;
 import ca.admin.delivermore.collector.data.entity.RestaurantMenuVersion.WorkflowStatus;
+import ca.admin.delivermore.collector.data.service.TeamsRepository;
 import ca.admin.delivermore.components.custom.MenuImagePickerDialog;
 import ca.admin.delivermore.data.service.MenuImageAssetService;
 import ca.admin.delivermore.data.service.MenuImageSlot;
+import ca.admin.delivermore.data.service.DeliveryZoneService;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
 import ca.admin.delivermore.views.UIUtilities;
@@ -183,10 +185,16 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
     public RestaurantMenuEditorView(
             RestaurantMenuEditorService restaurantMenuEditorService,
-            MenuImageAssetService menuImageAssetService) {
+            MenuImageAssetService menuImageAssetService,
+            DeliveryZoneService deliveryZoneService,
+            TeamsRepository teamsRepository) {
         this.restaurantMenuEditorService = restaurantMenuEditorService;
         this.menuImageAssetService = menuImageAssetService;
-        this.dataTablesMenu = new MenuDataTablesMenuBar(restaurantMenuEditorService, this::refreshItemSettingsOptionLists);
+        this.dataTablesMenu = new MenuDataTablesMenuBar(
+                restaurantMenuEditorService,
+                deliveryZoneService,
+                teamsRepository,
+                this::refreshItemSettingsOptionLists);
         setSizeFull();
         configureHeader();
         configureMenuHeaderControls();

@@ -86,7 +86,6 @@ public class RestaurantMenuEditorService {
     private static final String SERVICE_FEE_TAX_SETTING = "service_fee_tax";
     private static final String DELIVERY_FEE_TAX_SETTING = "delivery_fee_tax";
     private static final String CHECKOUT_SERVICE_FEE_RATE_SETTING = "service_fee_rate";
-    private static final String CHECKOUT_DELIVERY_FEE_SETTING = "delivery_fee";
     private static final String CHECKOUT_DELIVERY_FEE_INFO_TEXT_SETTING = "delivery_fee_info_text";
     private static final String CHECKOUT_FEES_TAXES_INFO_TEXT_SETTING = "fees_taxes_info_text";
     private static final String ITEM_TAXATION_CATEGORY_SETTING_PREFIX = "item_taxation_category_";
@@ -172,10 +171,6 @@ public class RestaurantMenuEditorService {
         double rate = getDoubleSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_SERVICE_FEE_RATE_SETTING, 0d);
         double normalized = rate > 1d ? rate / 100d : rate;
         return normalizeDecimal(normalized, 6);
-    }
-
-    public double getCheckoutDeliveryFee() {
-        return normalizeDecimal(getDoubleSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_DELIVERY_FEE_SETTING, 0d), 2);
     }
 
     public String getCheckoutDeliveryFeeInfoText() {
@@ -357,16 +352,6 @@ public class RestaurantMenuEditorService {
                 CHECKOUT_SERVICE_FEE_RATE_SETTING,
                 "Global checkout service fee rate as decimal (0.055 = 5.5%)",
                 normalizeDecimal(normalized, 6));
-    }
-
-    @org.springframework.transaction.annotation.Transactional
-    public void saveCheckoutDeliveryFee(double value) {
-        double normalized = Math.max(0d, value);
-        saveDoubleSetting(
-                CHECKOUT_SETTINGS_SECTION,
-                CHECKOUT_DELIVERY_FEE_SETTING,
-                "Global checkout delivery fee amount",
-                normalizeDecimal(normalized, 2));
     }
 
     @org.springframework.transaction.annotation.Transactional

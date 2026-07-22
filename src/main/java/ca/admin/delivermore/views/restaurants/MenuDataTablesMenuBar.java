@@ -20,6 +20,9 @@ import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 
+import ca.admin.delivermore.collector.data.service.TeamsRepository;
+import ca.admin.delivermore.components.custom.DeliveryZonesDialog;
+import ca.admin.delivermore.data.service.DeliveryZoneService;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.UIUtilities;
 
@@ -55,10 +58,18 @@ public class MenuDataTablesMenuBar extends MenuBar {
             "Alcohol");
 
     private final RestaurantMenuEditorService restaurantMenuEditorService;
+    private final DeliveryZoneService deliveryZoneService;
+    private final TeamsRepository teamsRepository;
     private final Runnable onSettingsChanged;
 
-    public MenuDataTablesMenuBar(RestaurantMenuEditorService restaurantMenuEditorService, Runnable onSettingsChanged) {
+    public MenuDataTablesMenuBar(
+            RestaurantMenuEditorService restaurantMenuEditorService,
+            DeliveryZoneService deliveryZoneService,
+            TeamsRepository teamsRepository,
+            Runnable onSettingsChanged) {
         this.restaurantMenuEditorService = restaurantMenuEditorService;
+        this.deliveryZoneService = deliveryZoneService;
+        this.teamsRepository = teamsRepository;
         this.onSettingsChanged = onSettingsChanged == null ? () -> {
         } : onSettingsChanged;
         configureDataTablesMenu();
@@ -108,7 +119,9 @@ public class MenuDataTablesMenuBar extends MenuBar {
                 restaurantMenuEditorService.getDeliveryFeeTaxRate(),
                 restaurantMenuEditorService::saveDeliveryFeeTaxRate));
 
-        dataTables.getSubMenu().addItem("Checkout Global Fees", event -> openCheckoutGlobalFeesDialog());
+        dataTables.getSubMenu().addItem("Checkout Service Fee", event -> openCheckoutServiceFeeDialog());
+
+        dataTables.getSubMenu().addItem("Delivery Zones", event -> openDeliveryZonesDialog());
 
         dataTables.getSubMenu().addItem("Delivery Fee Info Text", event -> openCheckoutInfoTextDialog(
                 "Delivery Fee Info Text",
@@ -304,16 +317,16 @@ public class MenuDataTablesMenuBar extends MenuBar {
         dialog.open();
     }
 
-    private void openCheckoutGlobalFeesDialog() {
+    private void openCheckoutServiceFeeDialog() {
         Dialog dialog = new Dialog();
-        dialog.setHeaderTitle("Checkout Global Fees");
+        dialog.setHeaderTitle("Checkout Service Fee");
 
         VerticalLayout content = new VerticalLayout();
         content.setPadding(false);
         content.setSpacing(true);
         UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.COMPACT);
 
-        Span helper = new Span("These values apply to all restaurants for checkout and are used in customer-facing fee explanations.");
+        Span helper = new Span("This value applies to all restaurants for checkout and is used in customer-facing fee explanations.");
         helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
         helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
 
@@ -323,29 +336,26 @@ public class MenuDataTablesMenuBar extends MenuBar {
         serviceFeePercent.setWidthFull();
         serviceFeePercent.setValue(roundToScale(restaurantMenuEditorService.getCheckoutServiceFeeRate() * 100d, 2));
 
-        NumberField deliveryFee = UIUtilities.getNumberField("Delivery fee", false, "$");
-        deliveryFee.setMin(0d);
-        deliveryFee.setStep(0.01d);
-        deliveryFee.setWidthFull();
-        deliveryFee.setValue(restaurantMenuEditorService.getCheckoutDeliveryFee());
-
         Button cancel = new Button("Cancel", event -> dialog.close());
         Button save = new Button("Save", event -> {
             double serviceRate = serviceFeePercent.getValue() == null ? 0d : Math.max(0d, roundToScale(serviceFeePercent.getValue(), 2) / 100d);
-            double globalDeliveryFee = deliveryFee.getValue() == null ? 0d : Math.max(0d, roundToScale(deliveryFee.getValue(), 2));
 
             restaurantMenuEditorService.saveCheckoutServiceFeeRate(serviceRate);
-            restaurantMenuEditorService.saveCheckoutDeliveryFee(globalDeliveryFee);
             onSettingsChanged.run();
 
-            showSuccess("Global checkout fees updated");
+            showSuccess("Checkout service fee updated");
             dialog.close();
         });
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
-        content.add(helper, serviceFeePercent, deliveryFee);
+        content.add(helper, serviceFeePercent);
         dialog.add(content);
         dialog.getFooter().add(cancel, save);
+        dialog.open();
+    }
+
+    private void openDeliveryZonesDialog() {
+        DeliveryZonesDialog dialog = new DeliveryZonesDialog(deliveryZoneService, teamsRepository, null);
         dialog.open();
     }
 

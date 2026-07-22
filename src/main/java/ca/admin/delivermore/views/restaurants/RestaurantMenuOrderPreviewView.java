@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
@@ -50,6 +51,10 @@ import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.Optio
 import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.OptionGroupData;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.PreviewData;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.SizeData;
+import ca.admin.delivermore.data.service.DeliveryZoneService;
+import ca.admin.delivermore.data.service.CustomerProfileService;
+import ca.admin.delivermore.data.service.LocationLookupService;
+import ca.admin.delivermore.components.custom.LeafletPointPickerDialog;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.LineItemRequest;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SelectedOptionRequest;
@@ -68,9 +73,14 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private static final int MOBILE_OVERLAY_BREAKPOINT = 900;
     private static final String TIP_MODE_AMOUNT = "Tip Amount";
     private static final String TIP_MODE_PERCENT = "Tip Percent";
+        private static final Set<String> PROVINCE_CODES = Set.of(
+            "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT");
 
     private final RestaurantMenuOrderPreviewService previewService;
     private final RestaurantMenuOrderSubmissionService submissionService;
+    private final DeliveryZoneService deliveryZoneService;
+    private final LocationLookupService locationLookupService;
+    private final CustomerProfileService customerProfileService;
 
     private Long restaurantId;
     private PreviewData previewData;
@@ -103,9 +113,15 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
 
     public RestaurantMenuOrderPreviewView(
             RestaurantMenuOrderPreviewService previewService,
-            RestaurantMenuOrderSubmissionService submissionService) {
+            RestaurantMenuOrderSubmissionService submissionService,
+            DeliveryZoneService deliveryZoneService,
+            LocationLookupService locationLookupService,
+            CustomerProfileService customerProfileService) {
         this.previewService = previewService;
         this.submissionService = submissionService;
+        this.deliveryZoneService = deliveryZoneService;
+        this.locationLookupService = locationLookupService;
+        this.customerProfileService = customerProfileService;
         setSizeFull();
         setPadding(false);
         setSpacing(true);
@@ -204,6 +220,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             return;
         }
 
+        applyDefaultCheckoutCityIfMissing();
         title.setText(previewData.restaurant().getName() + " - Preview & Test Ordering");
         renderMenu();
         renderCart();
@@ -789,16 +806,35 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         restaurantName.getStyle().set("font-weight", "600");
         card.add(restaurantName);
 
+        DeliveryZoneService.DeliveryQuote deliveryQuote = resolveCurrentDeliveryQuote();
+        Double restaurantDistanceKm = deliveryZoneService.distanceToRestaurantKm(
+                previewData.restaurant(),
+                checkoutState.customerLatitude,
+                checkoutState.customerLongitude);
+
         HorizontalLayout deliveryFeeRow = new HorizontalLayout();
         deliveryFeeRow.setPadding(false);
         deliveryFeeRow.setSpacing(true);
         deliveryFeeRow.setAlignItems(FlexComponent.Alignment.CENTER);
         deliveryFeeRow.add(
-                createMutedText("Delivery fee: " + formatCurrency(previewData.deliveryFee())),
+                createMutedText("Delivery fee: " + formatCurrency(calculateDeliveryFee())),
                 createInlineInfoButton("Delivery fee details", () -> openInfoDialog(
                         "Delivery Fee",
                         renderInfoTextWithPlaceholders(resolveDeliveryFeeInfoText()))));
         card.add(deliveryFeeRow);
+
+        if (!deliveryQuote.zonesConfigured()) {
+            card.add(createMutedText(deliveryQuote.message()));
+        } else if (!deliveryQuote.matched()) {
+            card.add(createMutedText(deliveryQuote.message()));
+        } else if (deliveryQuote.zoneName() != null && !deliveryQuote.zoneName().isBlank()) {
+            card.add(createMutedText("Zone: " + deliveryQuote.zoneName()
+                    + (deliveryQuote.distanceKm() == null ? "" : " | Base distance: " + formatDistance(deliveryQuote.distanceKm()))));
+        }
+
+        if (restaurantDistanceKm != null) {
+            card.add(createMutedText("Approx distance to restaurant: " + formatDistance(restaurantDistanceKm)));
+        }
         return card;
     }
 
@@ -885,38 +921,71 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         checkoutHeader.getStyle().set("margin", "0");
         card.add(checkoutHeader);
 
-        TextField contactName = new TextField("Contact name");
-        contactName.setWidthFull();
-        contactName.setValue(checkoutState.contactName);
-        contactName.addValueChangeListener(event -> checkoutState.contactName = valueOrBlank(event.getValue()));
-
         TextField contactEmail = new TextField("Email");
         contactEmail.setWidthFull();
+        contactEmail.setRequiredIndicatorVisible(true);
         contactEmail.setValue(checkoutState.contactEmail);
-        contactEmail.addValueChangeListener(event -> checkoutState.contactEmail = valueOrBlank(event.getValue()));
+        contactEmail.setValueChangeMode(ValueChangeMode.ON_BLUR);
+        contactEmail.addValueChangeListener(event -> {
+            checkoutState.contactEmail = valueOrBlank(event.getValue());
+            attemptCustomerPrefill();
+        });
 
         TextField contactPhone = new TextField("Phone");
         contactPhone.setWidthFull();
+        contactPhone.setRequiredIndicatorVisible(true);
         contactPhone.setValue(checkoutState.contactPhone);
-        contactPhone.addValueChangeListener(event -> checkoutState.contactPhone = valueOrBlank(event.getValue()));
+        contactPhone.setValueChangeMode(ValueChangeMode.ON_BLUR);
+        contactPhone.addValueChangeListener(event -> {
+            checkoutState.contactPhone = valueOrBlank(event.getValue());
+            attemptCustomerPrefill();
+        });
+
+        TextField contactName = new TextField("Contact name");
+        contactName.setWidthFull();
+        contactName.setRequiredIndicatorVisible(true);
+        contactName.setValue(checkoutState.contactName);
+        contactName.addValueChangeListener(event -> checkoutState.contactName = valueOrBlank(event.getValue()));
 
         TextField street = new TextField("Street address");
         street.setWidthFull();
+        street.setRequiredIndicatorVisible(true);
         street.setValue(checkoutState.street);
-        street.addValueChangeListener(event -> checkoutState.street = valueOrBlank(event.getValue()));
+        street.addValueChangeListener(event -> {
+            checkoutState.street = valueOrBlank(event.getValue());
+            clearConfirmedCustomerLocation(true);
+        });
 
         TextField city = new TextField("Town / city");
         city.setWidthFull();
+        city.setRequiredIndicatorVisible(true);
         city.setValue(checkoutState.city);
-        city.addValueChangeListener(event -> checkoutState.city = valueOrBlank(event.getValue()));
+        city.addValueChangeListener(event -> {
+            checkoutState.city = valueOrBlank(event.getValue());
+            clearConfirmedCustomerLocation(true);
+        });
 
-        TextField postal = new TextField("Postal code");
+        TextField postal = new TextField("Postal code (optional, helps lookup)");
         postal.setWidthFull();
         postal.setValue(checkoutState.postalCode);
-        postal.addValueChangeListener(event -> checkoutState.postalCode = valueOrBlank(event.getValue()));
+        postal.addValueChangeListener(event -> {
+            checkoutState.postalCode = valueOrBlank(event.getValue());
+            clearConfirmedCustomerLocation(true);
+        });
+
+        Button confirmLocation = new Button("Confirm location on map", event -> openCheckoutLocationDialog());
+        confirmLocation.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+        Button clearLocation = new Button("Clear confirmed location", event -> clearConfirmedCustomerLocation(true));
+        clearLocation.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY_INLINE);
+        Span locationStatus = createMutedText(resolveCheckoutLocationStatus());
+        VerticalLayout locationStatusBlock = new VerticalLayout(locationStatus);
+        locationStatusBlock.setPadding(false);
+        locationStatusBlock.setSpacing(false);
+        locationStatusBlock.setWidthFull();
 
         ComboBox<String> paymentMethod = new ComboBox<>("Payment method");
         paymentMethod.setWidthFull();
+        paymentMethod.setRequiredIndicatorVisible(true);
         paymentMethod.setItems(List.of("Cash", "Card to delivery person", "Online"));
         paymentMethod.setValue(checkoutState.paymentMethod);
 
@@ -1023,7 +1092,9 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         comments.setValue(checkoutState.comments);
         comments.addValueChangeListener(event -> checkoutState.comments = valueOrBlank(event.getValue()));
 
-        card.add(contactName, contactEmail, contactPhone, street, city, postal);
+        card.add(contactEmail, contactPhone, contactName, street, city, postal,
+            new HorizontalLayout(confirmLocation, clearLocation),
+            locationStatusBlock);
         checkoutTipBlock.add(
                 checkoutTipModeField,
                 checkoutTipPercentField,
@@ -1043,6 +1114,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
                 SubmissionResult result = submissionService.submitOrder(buildSubmitOrderRequest());
                 cartLines.clear();
                 checkoutState.clear();
+                applyDefaultCheckoutCityIfMissing();
                 renderCart();
                 if (mobileOverlayMode) {
                     closeCartOverlay();
@@ -1054,6 +1126,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         });
         placeOrder.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         placeOrder.setWidthFull();
+        placeOrder.setEnabled(resolveCurrentDeliveryQuote().matched());
         card.add(placeOrder);
         return card;
     }
@@ -1067,6 +1140,8 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
                 checkoutState.street,
                 checkoutState.city,
                 checkoutState.postalCode,
+            checkoutState.customerLatitude,
+            checkoutState.customerLongitude,
                 checkoutState.paymentMethod,
                 checkoutState.inPersonDelivery,
                 calculateTipAmount(),
@@ -1267,6 +1342,189 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return withDeliveryFee.replace("{{SERVICE_FEE_PERCENT}}", formatPercent(previewData.serviceFeeRate() * 100d));
     }
 
+    private DeliveryZoneService.DeliveryQuote resolveCurrentDeliveryQuote() {
+        if (previewData == null || previewData.restaurant() == null) {
+            return new DeliveryZoneService.DeliveryQuote(false, true, 0d, null, null, "");
+        }
+        return deliveryZoneService.quoteForRestaurant(
+                previewData.restaurant(),
+                checkoutState.customerLatitude,
+                checkoutState.customerLongitude);
+    }
+
+    private String resolveCheckoutLocationStatus() {
+        if (checkoutState.customerLatitude == null || checkoutState.customerLongitude == null) {
+            return "Confirm the delivery point before placing the order.";
+            
+        }
+
+        DeliveryZoneService.DeliveryQuote deliveryQuote = resolveCurrentDeliveryQuote();
+        StringBuilder status = new StringBuilder(String.format(
+                Locale.CANADA,
+                "Confirmed coordinates: %.6f, %.6f",
+                checkoutState.customerLatitude,
+                checkoutState.customerLongitude));
+        if (deliveryQuote.matched()) {
+            status.append(" | Fee ").append(formatCurrency(deliveryQuote.deliveryFee()));
+            if (deliveryQuote.zoneName() != null && !deliveryQuote.zoneName().isBlank()) {
+                status.append(" | ").append(deliveryQuote.zoneName());
+            }
+        } else if (deliveryQuote.message() != null && !deliveryQuote.message().isBlank()) {
+            status.append(" | ").append(deliveryQuote.message());
+        }
+        return status.toString();
+    }
+
+    private void clearConfirmedCustomerLocation(boolean rerender) {
+        if (checkoutState.customerLatitude == null && checkoutState.customerLongitude == null) {
+            return;
+        }
+        checkoutState.customerLatitude = null;
+        checkoutState.customerLongitude = null;
+        if (rerender && previewData != null) {
+            renderCart();
+        }
+    }
+
+    private void openCheckoutLocationDialog() {
+        applyDefaultCheckoutCityIfMissing();
+        String address = buildCheckoutAddress();
+        Optional<LocationLookupService.LookupResult> geocoded = locationLookupService.geocodeAddress(address);
+        Optional<DeliveryZoneService.BaseLocation> baseLocation = deliveryZoneService.getBaseLocation(previewData.restaurant().getTeamId());
+
+        boolean geocodeFailedForAddress = !address.isBlank() && geocoded.isEmpty();
+
+        LeafletPointPickerDialog.SelectedPoint centerPoint = geocoded
+                .map(result -> new LeafletPointPickerDialog.SelectedPoint(result.latitude(), result.longitude()))
+                .or(() -> checkoutState.customerLatitude != null && checkoutState.customerLongitude != null
+                        ? Optional.of(new LeafletPointPickerDialog.SelectedPoint(checkoutState.customerLatitude, checkoutState.customerLongitude))
+                        : Optional.empty())
+                .or(() -> baseLocation
+                        .filter(DeliveryZoneService.BaseLocation::hasCoordinates)
+                        .map(base -> new LeafletPointPickerDialog.SelectedPoint(base.latitude(), base.longitude())))
+                .orElse(new LeafletPointPickerDialog.SelectedPoint(51.037d, -113.402d));
+
+        LeafletPointPickerDialog.SelectedPoint initialSelection = checkoutState.customerLatitude != null && checkoutState.customerLongitude != null
+                ? new LeafletPointPickerDialog.SelectedPoint(checkoutState.customerLatitude, checkoutState.customerLongitude)
+                : geocoded.map(result -> new LeafletPointPickerDialog.SelectedPoint(result.latitude(), result.longitude())).orElse(null);
+
+        String helpText = geocoded.isPresent()
+                ? "The map is centered on the typed address. Adjust the point if needed, then confirm it."
+            : geocodeFailedForAddress
+                ? String.format(
+                    Locale.CANADA,
+                    "%s not found. Please select your location on the map to continue.",
+                    address)
+                : "Click the delivery point on the map, then confirm it.";
+
+        LeafletPointPickerDialog dialog = new LeafletPointPickerDialog(
+                "Confirm Delivery Location",
+                helpText,
+                centerPoint,
+                initialSelection,
+                point -> {
+                    checkoutState.customerLatitude = point.latitude();
+                    checkoutState.customerLongitude = point.longitude();
+                    renderCart();
+                });
+        dialog.open();
+    }
+
+    private String buildCheckoutAddress() {
+        List<String> parts = new ArrayList<>();
+        if (checkoutState.street != null && !checkoutState.street.isBlank()) {
+            parts.add(checkoutState.street.trim());
+        }
+        if (checkoutState.city != null && !checkoutState.city.isBlank()) {
+            parts.add(checkoutState.city.trim());
+        }
+        if (checkoutState.postalCode != null && !checkoutState.postalCode.isBlank()) {
+            parts.add(checkoutState.postalCode.trim());
+        }
+        return String.join(", ", parts);
+    }
+
+    private void applyDefaultCheckoutCityIfMissing() {
+        if (checkoutState.city != null && !checkoutState.city.isBlank()) {
+            return;
+        }
+
+        String defaultCity = resolveDefaultCheckoutCity();
+        if (!defaultCity.isBlank()) {
+            checkoutState.city = defaultCity;
+        }
+    }
+
+    private String resolveDefaultCheckoutCity() {
+        if (previewData == null || previewData.restaurant() == null) {
+            return "";
+        }
+
+        String fromRestaurantLocation = extractCityFromAddress(previewData.restaurant().getLocationAddress());
+        if (!fromRestaurantLocation.isBlank()) {
+            return fromRestaurantLocation;
+        }
+
+        return deliveryZoneService.getBaseLocation(previewData.restaurant().getTeamId())
+                .map(DeliveryZoneService.BaseLocation::address)
+                .map(this::extractCityFromAddress)
+                .filter(city -> !city.isBlank())
+                .orElse("");
+    }
+
+    private String extractCityFromAddress(String address) {
+        if (address == null || address.isBlank()) {
+            return "";
+        }
+
+        String normalized = address.trim();
+        List<String> tokens = java.util.Arrays.stream(normalized.split(","))
+                .map(String::trim)
+                .filter(token -> !token.isBlank())
+                .toList();
+
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            if (!isLikelyLocalityToken(token)) {
+                continue;
+            }
+
+            String province = i + 1 < tokens.size() ? extractProvinceCode(tokens.get(i + 1)) : "";
+            return province.isBlank() ? token : token + ", " + province;
+        }
+
+        if (normalized.toLowerCase(Locale.ROOT).contains("strathmore")) {
+            String province = extractProvinceCode(normalized);
+            return province.isBlank() ? "Strathmore" : "Strathmore, " + province;
+        }
+        return "";
+    }
+
+    private boolean isLikelyLocalityToken(String token) {
+        String upper = token.toUpperCase(Locale.ROOT);
+        if (upper.contains("CANADA")) {
+            return false;
+        }
+        if (!extractProvinceCode(token).isBlank()) {
+            return false;
+        }
+        if (token.chars().anyMatch(Character::isDigit)) {
+            return false;
+        }
+
+        String compact = upper.replace('.', ' ');
+        return !compact.matches(".*\\b(STREET|ST|AVENUE|AVE|ROAD|RD|DRIVE|DR|BOULEVARD|BLVD|LANE|LN|WAY|TRAIL|TR|CRES|CRESCENT|COURT|CT|PLACE|PL|CIRCLE|CIR|HIGHWAY|HWY)\\b.*");
+    }
+
+    private String extractProvinceCode(String token) {
+        if (token == null || token.isBlank()) {
+            return "";
+        }
+        String trimmed = token.trim().toUpperCase(Locale.ROOT);
+        String first = trimmed.split("\\s+")[0];
+        return PROVINCE_CODES.contains(first) ? first : "";
+    }
+
     private double minimumDisplayPrice(ItemData item) {
         if (item.sizes().isEmpty()) {
             return item.basePrice();
@@ -1303,7 +1561,11 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     }
 
     private double calculateDeliveryFee() {
-        return previewData.deliveryFee();
+        DeliveryZoneService.DeliveryQuote deliveryQuote = resolveCurrentDeliveryQuote();
+        if (!deliveryQuote.matched()) {
+            return 0d;
+        }
+        return roundCurrency(deliveryQuote.deliveryFee());
     }
 
     private double calculateDeliveryFeeTax() {
@@ -1481,6 +1743,13 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return value + "%";
     }
 
+    private String formatDistance(Double km) {
+        if (km == null) {
+            return "";
+        }
+        return String.format(Locale.CANADA, "%.2f km", km);
+    }
+
     private double calculateTipAmount() {
         return roundCurrency(checkoutState.tipAmount);
     }
@@ -1576,6 +1845,10 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return value == null ? "" : value;
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private Optional<Long> parseLong(String raw) {
         try {
             return Optional.of(Long.valueOf(raw));
@@ -1592,6 +1865,202 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private void showSuccess(String message) {
         Notification notification = Notification.show(message, 2000, Notification.Position.BOTTOM_START);
         notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+    }
+
+    private void attemptCustomerPrefill() {
+        if (customerProfileService == null) {
+            return;
+        }
+
+        if ((checkoutState.contactEmail == null || checkoutState.contactEmail.isBlank())
+                && (checkoutState.contactPhone == null || checkoutState.contactPhone.isBlank())) {
+            return;
+        }
+
+        customerProfileService.findPrefillCandidate(checkoutState.contactEmail, checkoutState.contactPhone)
+                .ifPresent(prefill -> {
+                    boolean changed = false;
+                    boolean clearConfirmedLocation = false;
+
+                    String preferredName = prefill.fullName().isBlank()
+                            ? (prefill.firstName() + " " + prefill.lastName()).trim()
+                            : prefill.fullName();
+
+                    if (shouldApplyValue(checkoutState.contactName, preferredName)) {
+                        checkoutState.contactName = preferredName;
+                        changed = true;
+                    }
+                    if (shouldApplyValue(checkoutState.contactEmail, prefill.email())) {
+                        checkoutState.contactEmail = prefill.email();
+                        changed = true;
+                    }
+                    if (shouldApplyValue(checkoutState.contactPhone, prefill.phone())) {
+                        checkoutState.contactPhone = prefill.phone();
+                        changed = true;
+                    }
+
+                    List<CustomerProfileService.CustomerAddressChoice> addressChoices = prefill.addresses() == null
+                            ? List.of()
+                            : prefill.addresses();
+
+                    if (addressChoices.size() > 1) {
+                        // City can be prefilled from restaurant defaults; street is the best signal
+                        // that the user has not chosen/typed a concrete delivery address yet.
+                        if (isBlank(checkoutState.street)) {
+                            openAddressChoiceDialog(prefill, addressChoices);
+                        }
+                    } else if (addressChoices.size() == 1) {
+                        if (applyAddressChoice(addressChoices.get(0))) {
+                            changed = true;
+                        }
+                    } else {
+                        if (shouldApplyValue(checkoutState.street, prefill.streetAddress())) {
+                            checkoutState.street = prefill.streetAddress();
+                            changed = true;
+                            clearConfirmedLocation = true;
+                        }
+                        if (shouldApplyValue(checkoutState.city, prefill.city())) {
+                            checkoutState.city = prefill.city();
+                            changed = true;
+                            clearConfirmedLocation = true;
+                        }
+                        if (shouldApplyValue(checkoutState.postalCode, prefill.postalCode())) {
+                            checkoutState.postalCode = prefill.postalCode();
+                            changed = true;
+                            clearConfirmedLocation = true;
+                        }
+                    }
+
+                    if (changed) {
+                        if (clearConfirmedLocation) {
+                            clearConfirmedCustomerLocation(false);
+                        }
+                        renderCart();
+                    }
+                });
+    }
+
+    private boolean shouldApplyValue(String existing, String incoming) {
+        if (incoming == null || incoming.isBlank()) {
+            return false;
+        }
+        return existing == null || existing.isBlank();
+    }
+
+    private boolean applyAddressChoice(CustomerProfileService.CustomerAddressChoice choice) {
+        boolean changed = false;
+        if (choice == null) {
+            return false;
+        }
+        String nextStreet = valueOrBlank(choice.streetAddress());
+        if (!nextStreet.equals(checkoutState.street)) {
+            checkoutState.street = nextStreet;
+            changed = true;
+        }
+        String nextCity = valueOrBlank(choice.city());
+        if (!nextCity.equals(checkoutState.city)) {
+            checkoutState.city = nextCity;
+            changed = true;
+        }
+        String nextPostal = valueOrBlank(choice.postalCode());
+        if (!nextPostal.equals(checkoutState.postalCode)) {
+            checkoutState.postalCode = nextPostal;
+            changed = true;
+        }
+
+        boolean hasConfirmedSavedLocation = choice.latitude() != null
+                && choice.longitude() != null
+                && "MAP_CONFIRMED".equalsIgnoreCase(valueOrBlank(choice.locationSource()));
+
+        if (hasConfirmedSavedLocation) {
+            if (!Objects.equals(checkoutState.customerLatitude, choice.latitude())) {
+                checkoutState.customerLatitude = choice.latitude();
+                changed = true;
+            }
+            if (!Objects.equals(checkoutState.customerLongitude, choice.longitude())) {
+                checkoutState.customerLongitude = choice.longitude();
+                changed = true;
+            }
+        } else {
+            if (checkoutState.customerLatitude != null || checkoutState.customerLongitude != null) {
+                checkoutState.customerLatitude = null;
+                checkoutState.customerLongitude = null;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private void openAddressChoiceDialog(
+            CustomerProfileService.CustomerPrefill prefill,
+            List<CustomerProfileService.CustomerAddressChoice> addressChoices) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Choose delivery address");
+
+        VerticalLayout body = new VerticalLayout();
+        body.setPadding(false);
+        body.setSpacing(true);
+        body.setWidth("520px");
+        body.add(createMutedText("This customer has multiple saved addresses. Choose one for this order or keep a new address."));
+
+        RadioButtonGroup<String> selector = new RadioButtonGroup<>();
+        selector.setWidthFull();
+        selector.addThemeVariants(RadioGroupVariant.LUMO_VERTICAL);
+
+        List<String> options = new ArrayList<>();
+        for (int i = 0; i < addressChoices.size(); i++) {
+            options.add("address-" + i);
+        }
+        options.add("new-address");
+
+        selector.setItems(options);
+        selector.setItemLabelGenerator(option -> {
+            if ("new-address".equals(option)) {
+                return "New address";
+            }
+            int index = Integer.parseInt(option.substring("address-".length()));
+            CustomerProfileService.CustomerAddressChoice choice = addressChoices.get(index);
+            String number = "Address " + (index + 1);
+            String details = buildAddressDisplay(choice.streetAddress(), choice.city(), choice.postalCode());
+            return details.isBlank() ? number : number + " - " + details;
+        });
+        selector.setValue(options.getFirst());
+
+        Button apply = new Button("Apply", event -> {
+            String selected = selector.getValue();
+            if (selected != null && selected.startsWith("address-")) {
+                int index = Integer.parseInt(selected.substring("address-".length()));
+                if (index >= 0 && index < addressChoices.size()) {
+                    if (applyAddressChoice(addressChoices.get(index))) {
+                        renderCart();
+                    }
+                }
+            }
+            dialog.close();
+        });
+        apply.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        Button keepNew = new Button("Keep current", event -> dialog.close());
+        keepNew.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        body.add(selector);
+        dialog.add(body);
+        dialog.getFooter().add(keepNew, apply);
+        dialog.open();
+    }
+
+    private String buildAddressDisplay(String street, String city, String postalCode) {
+        List<String> parts = new ArrayList<>();
+        if (street != null && !street.isBlank()) {
+            parts.add(street.trim());
+        }
+        if (city != null && !city.isBlank()) {
+            parts.add(city.trim());
+        }
+        if (postalCode != null && !postalCode.isBlank()) {
+            parts.add(postalCode.trim());
+        }
+        return String.join(", ", parts);
     }
 
     private record OptionChoice(OptionData option) {
@@ -1694,6 +2163,8 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         private String street = "";
         private String city = "";
         private String postalCode = "";
+        private Double customerLatitude;
+        private Double customerLongitude;
         private String paymentMethod = "Cash";
         private boolean inPersonDelivery = false;
         private String tipMode = TIP_MODE_AMOUNT;
@@ -1708,6 +2179,8 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             street = "";
             city = "";
             postalCode = "";
+            customerLatitude = null;
+            customerLongitude = null;
             paymentMethod = "Cash";
             inPersonDelivery = false;
             tipMode = TIP_MODE_AMOUNT;

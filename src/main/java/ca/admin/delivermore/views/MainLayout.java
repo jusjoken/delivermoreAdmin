@@ -49,6 +49,7 @@ import ca.admin.delivermore.views.restaurants.RestInvoiceView;
 import ca.admin.delivermore.views.restaurants.RestPayoutView;
 import ca.admin.delivermore.views.restaurants.RestView;
 import ca.admin.delivermore.views.restaurants.StagedRestaurantOrdersView;
+import ca.admin.delivermore.views.utility.CustomerDashboardView;
 
 /**
  * The main view is a top-level placeholder for other views.
@@ -158,7 +159,8 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
                 || checkAccess(TabletAssetHistoryView.class)
                 || checkAccess(TabletOrderMonitoringView.class)
             || checkAccess(TASKS_VIEW_CLASS)
-            || checkAccess(LOG_VIEWER_VIEW_CLASS)) {
+            || checkAccess(LOG_VIEWER_VIEW_CLASS)
+            || checkAccess(CustomerDashboardView.class)) {
             SideNavItem utilities = new SideNavItem("Utilities");
             utilities.setPrefixComponent(VaadinIcon.FOLDER_OPEN.create());
             nav.addItem(utilities);
@@ -227,6 +229,10 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             if (checkAccess(LOG_VIEWER_VIEW_CLASS)) {
                 SideNavItem logsMenu = new SideNavItem("Log Viewer", "logviewer", VaadinIcon.FILE_TEXT.create());
                 utilities.addItem(logsMenu);
+            }
+            if (checkAccess(CustomerDashboardView.class)) {
+                SideNavItem customersMenu = new SideNavItem("Customers", CustomerDashboardView.class, VaadinIcon.USERS.create());
+                utilities.addItem(customersMenu);
             }
         }
 

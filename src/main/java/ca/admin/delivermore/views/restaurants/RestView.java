@@ -2,7 +2,9 @@ package ca.admin.delivermore.views.restaurants;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,7 @@ import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.TabSheet;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.NumberField;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextFieldVariant;
 import com.vaadin.flow.router.PageTitle;
@@ -45,12 +48,17 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoIcon;
 
 import ca.admin.delivermore.collector.data.entity.Restaurant;
+import ca.admin.delivermore.collector.data.service.TeamsRepository;
 import ca.admin.delivermore.components.custom.MenuImagePickerDialog;
+import ca.admin.delivermore.components.custom.DeliveryZonesDialog;
+import ca.admin.delivermore.components.custom.LeafletPointPickerDialog;
 import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.collector.data.tookan.Team;
 import ca.admin.delivermore.components.custom.ListEditor;
 import ca.admin.delivermore.components.custom.LocationChoice;
 import ca.admin.delivermore.components.custom.LocationChoiceChangedListener;
+import ca.admin.delivermore.data.service.DeliveryZoneService;
+import ca.admin.delivermore.data.service.LocationLookupService;
 import ca.admin.delivermore.data.service.MenuImageAssetService;
 import ca.admin.delivermore.data.service.MenuImageSlot;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
@@ -75,8 +83,10 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private Icon resetIcon = LumoIcon.UNDO.create();
     private TabSheet dialogTabSheet = new TabSheet();
     private Tab dialogTabEmail = new Tab();
+    private Tab dialogTabLocation = new Tab();
     private Tab dialogTabOther = new Tab();
     private Icon tabEmailIcon = VaadinIcon.EXCLAMATION_CIRCLE_O.create();
+    private Icon tabLocationIcon = VaadinIcon.EXCLAMATION_CIRCLE_O.create();
     private Icon tabOtherIcon = VaadinIcon.EXCLAMATION_CIRCLE_O.create();
 
     private Button dialogResetButton = new Button("Reset");
@@ -109,10 +119,19 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private IntegerField dialogRestFormId = UIUtilities.getIntegerField("Form Id",false,0);
 
     private Select<Team> dialogRestLocation = new Select<>();
+    private TextArea dialogRestLocationAddress = new TextArea("Physical address");
+    private TextField dialogRestLocationLatitude = UIUtilities.getTextField("Latitude");
+    private TextField dialogRestLocationLongitude = UIUtilities.getTextField("Longitude");
+    private Span dialogRestLocationStatus = new Span();
+    private Button dialogRestVerifyLocationButton = new Button("Verify on map");
+    private Button dialogRestClearLocationButton = new Button("Clear verification");
     private Image dialogRestLogoPreview = new Image();
     private Button dialogRestLogoSelectButton = new Button("Select logo");
     private Button dialogRestLogoRemoveButton = new Button("Remove logo");
     private Long dialogRestLogoImageAssetId;
+    private Double dialogRestVerifiedLatitude;
+    private Double dialogRestVerifiedLongitude;
+    private LocalDateTime dialogRestLocationVerifiedAt;
 
     private ListEditor dialogRestEmailEditor = new ListEditor();
 
@@ -124,6 +143,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private Boolean validationEnabled = Boolean.FALSE;
     private Boolean hasChangedValues = Boolean.FALSE;
     private Boolean hasChangedValuesEmail = Boolean.FALSE;
+    private Boolean hasChangedValuesLocation = Boolean.FALSE;
     private Boolean hasChangedValuesOther = Boolean.FALSE;
 
     Grid<Restaurant> grid = new Grid<>();
@@ -137,16 +157,25 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     RestaurantRepository restaurantRepository;
     private final RestaurantMenuEditorService restaurantMenuEditorService;
     private final MenuImageAssetService menuImageAssetService;
+    private final DeliveryZoneService deliveryZoneService;
+    private final LocationLookupService locationLookupService;
+    private final TeamsRepository teamsRepository;
 
     private Logger log = LoggerFactory.getLogger(RestView.class);
 
     public RestView(
             RestaurantRepository restaurantRepository,
             RestaurantMenuEditorService restaurantMenuEditorService,
-            MenuImageAssetService menuImageAssetService) {
+            MenuImageAssetService menuImageAssetService,
+            DeliveryZoneService deliveryZoneService,
+            LocationLookupService locationLookupService,
+            TeamsRepository teamsRepository) {
         this.restaurantRepository = restaurantRepository;
         this.restaurantMenuEditorService = restaurantMenuEditorService;
         this.menuImageAssetService = menuImageAssetService;
+        this.deliveryZoneService = deliveryZoneService;
+        this.locationLookupService = locationLookupService;
+        this.teamsRepository = teamsRepository;
         log.info("Configuring the dialog");
         dialogConfigure();
         configureNewRestDialog();
@@ -165,6 +194,9 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         grid.addColumn(item -> {
             return locationChoice.getLocationNameById(item.getTeamId());
         }).setHeader("Location");
+        grid.addColumn(item -> item.getLocationAddress() == null ? "" : item.getLocationAddress())
+                .setHeader("Physical Address")
+                .setWidth("260px");
         grid.addColumn(item -> {
             return getCommissionFormatted(item.getCommissionRate());
         }).setHeader("Commission").setTextAlign(ColumnTextAlign.END);
@@ -355,6 +387,9 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         refreshButton.addClickListener(e -> {
             refreshGrid();
         });
+        Button zonesButton = new Button("Delivery Zones", VaadinIcon.GLOBE.create());
+        zonesButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+        zonesButton.addClickListener(event -> openDeliveryZonesDialog());
 
         Icon addIcon = new Icon(VaadinIcon.PLUS);
         //addIcon.setSize("20px");
@@ -367,7 +402,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         addItemMB.addItem(addIcon);
 
 
-        toolbar.add(refreshButton,addItemMB,locationChoice.getMenuBar());
+        toolbar.add(refreshButton, addItemMB, zonesButton, locationChoice.getMenuBar());
         return toolbar;
     }
 
@@ -406,7 +441,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                     newRest.setSendToTablet(false);
                     newRest.setSendToTookan(false);
                     newRest.setActiveForPayout(true);
-                    dialogTabSheet.setSelectedTab(dialogTabOther);
+                    dialogTabSheet.setSelectedTab(dialogTabLocation);
                     dialogMode = DialogMode.NEW;
                     dialogOpen(newRest);
                 }
@@ -493,6 +528,8 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
     private void dialogConfigure() {
         restDialog.getElement().setAttribute("aria-label", "Edit restaurant details");
+        restDialog.setWidth("960px");
+        restDialog.setMaxWidth("95vw");
 
         VerticalLayout dialogLayout = dialogLayout();
         restDialog.add(dialogLayout);
@@ -588,6 +625,30 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             if(validationEnabled) dialogValidate();
         });
 
+        dialogRestLocationAddress.setWidthFull();
+        dialogRestLocationAddress.setMinHeight("110px");
+        dialogRestLocationAddress.addValueChangeListener(event -> {
+            if (validationEnabled) {
+                clearDialogLocationVerification();
+                refreshDialogLocationStatus();
+                dialogValidate();
+            }
+        });
+
+        dialogRestLocationLatitude.setReadOnly(true);
+        dialogRestLocationLongitude.setReadOnly(true);
+        dialogRestLocationStatus.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        dialogRestVerifyLocationButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+        dialogRestVerifyLocationButton.addClickListener(event -> openRestaurantLocationPickerDialog());
+        dialogRestClearLocationButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY_INLINE);
+        dialogRestClearLocationButton.addClickListener(event -> {
+            clearDialogLocationVerification();
+            refreshDialogLocationStatus();
+            if (validationEnabled) {
+                dialogValidate();
+            }
+        });
+
         dialogRestLogoPreview.setAlt("Restaurant logo preview");
         dialogRestLogoPreview.setWidth("140px");
         dialogRestLogoPreview.getStyle().set("height", "140px");
@@ -614,6 +675,13 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
         HorizontalLayout locationFieldsLayout = UIUtilities.getHorizontalLayout(false,true,false);
         locationFieldsLayout.add(dialogRestLocation);
+
+    FormLayout verifiedPointLayout = new FormLayout();
+    verifiedPointLayout.setWidthFull();
+    verifiedPointLayout.setResponsiveSteps(
+        new FormLayout.ResponsiveStep("0", 1),
+        new FormLayout.ResponsiveStep("34em", 2));
+    verifiedPointLayout.add(dialogRestLocationLatitude, dialogRestLocationLongitude);
 
         String halfFieldWidth = "130px";
         dialogRestCommission.setReadOnly(false);
@@ -753,27 +821,39 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestFormId.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
-        FormLayout fieldsLayout6 = new FormLayout();
-        fieldsLayout6.setWidthFull();
-        fieldsLayout6.setResponsiveSteps(
+        FormLayout menuFieldsLayout = new FormLayout();
+        menuFieldsLayout.setWidthFull();
+        menuFieldsLayout.setResponsiveSteps(
             new FormLayout.ResponsiveStep("0", 1),
             new FormLayout.ResponsiveStep("34em", 2),
             new FormLayout.ResponsiveStep("48em", 3)
         );
-        fieldsLayout6.add(dialogRestGlobalAuthCode,dialogRestFetchMenuKey,dialogRestFormId);
+        menuFieldsLayout.add(dialogRestGlobalAuthCode,dialogRestFetchMenuKey,dialogRestFormId);
+
+        VerticalLayout locationTabLayout = UIUtilities.getVerticalLayout();
+        locationTabLayout.add(
+                logoLayout,
+                locationFieldsLayout,
+                dialogRestLocationAddress,
+                new HorizontalLayout(dialogRestVerifyLocationButton, dialogRestClearLocationButton),
+                dialogRestLocationStatus,
+                verifiedPointLayout,
+                menuFieldsLayout);
 
         VerticalLayout otherFieldsLayout = UIUtilities.getVerticalLayout();
-        otherFieldsLayout.add(logoLayout,locationFieldsLayout,commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c,fieldsLayout6);
+        otherFieldsLayout.add(commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c);
         dialogTabEmail = new Tab(tabEmailIcon, new Span("Email"));
+        dialogTabLocation = new Tab(tabLocationIcon, new Span("Location & Menu"));
         dialogTabOther = new Tab(tabOtherIcon, new Span("Other"));
         dialogTabSheet.add(dialogTabEmail, dialogRestEmailEditor);
+        dialogTabSheet.add(dialogTabLocation, locationTabLayout);
         dialogTabSheet.add(dialogTabOther, otherFieldsLayout);
 
         VerticalLayout fieldLayout = new VerticalLayout(dialogRestName,dateFieldsLayout,dialogTabSheet);
         fieldLayout.setSpacing(false);
         fieldLayout.setPadding(false);
         fieldLayout.setAlignItems(FlexComponent.Alignment.STRETCH);
-        fieldLayout.getStyle().set("width", "300px").set("max-width", "100%");
+        fieldLayout.setWidthFull();
 
         return fieldLayout;
     }
@@ -812,6 +892,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             dialogRestLocation.setValue(locationChoice.getLocationTeamById(selectedRestaurant.getTeamId()));
         }
+        dialogRestLocationAddress.setValue(selectedRestaurant.getLocationAddress() == null ? "" : selectedRestaurant.getLocationAddress());
+        dialogRestVerifiedLatitude = selectedRestaurant.getLocationLatitude();
+        dialogRestVerifiedLongitude = selectedRestaurant.getLocationLongitude();
+        dialogRestLocationVerifiedAt = selectedRestaurant.getLocationVerifiedAt();
+        refreshDialogLocationStatus();
 
         if(selectedRestaurant.getCommissionRate()==null || selectedRestaurant.getCommissionRate().equals(0.0)){
             dialogRestCommission.setValue(0);
@@ -882,10 +967,12 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             if(dialogMode.equals(DialogMode.NEW)){
                 hasChangedValues = Boolean.TRUE;
                 hasChangedValuesEmail = Boolean.TRUE;
+                hasChangedValuesLocation = Boolean.TRUE;
                 hasChangedValuesOther = Boolean.TRUE;
             }else{
                 hasChangedValues = Boolean.FALSE;
                 hasChangedValuesEmail = Boolean.FALSE;
+                hasChangedValuesLocation = Boolean.FALSE;
                 hasChangedValuesOther = Boolean.FALSE;
                 //validate all fields here
                 if(dialogMode.equals(DialogMode.NEW_CLONE)){
@@ -893,6 +980,9 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                     validateDatePicker(dialogRestEffectiveDate, selectedRestaurant.getDateEffective());
                 }
                 validateTeam(dialogRestLocation,locationChoice.getLocationTeamById(selectedRestaurant.getTeamId()));
+                validateTextAreaField(dialogRestLocationAddress, selectedRestaurant.getLocationAddress());
+                validateCoordinateValue(dialogRestVerifiedLatitude, selectedRestaurant.getLocationLatitude());
+                validateCoordinateValue(dialogRestVerifiedLongitude, selectedRestaurant.getLocationLongitude());
                 validateIntegerField(dialogRestCommission, getDoubleAsInteger(selectedRestaurant.getCommissionRate()));
                 validateIntegerField(dialogRestCommissionPhonein, getDoubleAsInteger(selectedRestaurant.getCommissionRatePhonein()));
                 validateField(dialogRestCommPerDelivery,selectedRestaurant.getCommissionPerDelivery());
@@ -923,6 +1013,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             }else{
                 tabEmailIcon.setColor(UIUtilities.iconColorNotHighlighted);
             }
+            if(hasChangedValuesLocation){
+                tabLocationIcon.setColor(UIUtilities.iconColorHighlighted);
+            }else{
+                tabLocationIcon.setColor(UIUtilities.iconColorNotHighlighted);
+            }
             if(hasChangedValuesOther){
                 tabOtherIcon.setColor(UIUtilities.iconColorHighlighted);
             }else{
@@ -931,8 +1026,30 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         }else{
             enableOkReset(false);
             tabEmailIcon.setColor(UIUtilities.iconColorNotHighlighted);
+            tabLocationIcon.setColor(UIUtilities.iconColorNotHighlighted);
             tabOtherIcon.setColor(UIUtilities.iconColorNotHighlighted);
         }
+    }
+
+    private void validateTextAreaField(TextArea field, String value){
+        String fieldValue = field.getValue() == null ? "" : field.getValue().trim();
+        String normalizedValue = value == null ? "" : value.trim();
+        if(fieldValue.equals(normalizedValue)){
+            field.getStyle().set("box-shadow","none");
+        }else{
+            field.getStyle().set("box-shadow",UIUtilities.boxShadowStyle);
+            field.getStyle().set("border-radius",UIUtilities.boxShadowStyleRadius);
+            hasChangedValues = Boolean.TRUE;
+            hasChangedValuesLocation = Boolean.TRUE;
+        }
+    }
+
+    private void validateCoordinateValue(Double fieldValue, Double value) {
+        if ((fieldValue == null && value == null) || (fieldValue != null && fieldValue.equals(value))) {
+            return;
+        }
+        hasChangedValues = Boolean.TRUE;
+        hasChangedValuesLocation = Boolean.TRUE;
     }
 
     private void validateField(NumberField field, Double value){
@@ -963,7 +1080,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             field.getStyle().set("box-shadow",UIUtilities.boxShadowStyle);
             field.getStyle().set("border-radius",UIUtilities.boxShadowStyleRadius);
             hasChangedValues = Boolean.TRUE;
-            hasChangedValuesOther = Boolean.TRUE;
+            hasChangedValuesLocation = Boolean.TRUE;
         }
     }
 
@@ -1017,7 +1134,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             return;
         }
         hasChangedValues = Boolean.TRUE;
-        hasChangedValuesOther = Boolean.TRUE;
+        hasChangedValuesLocation = Boolean.TRUE;
     }
 
     private void validateEmailField(ListBox<?> field, String fieldValue, String value){
@@ -1035,11 +1152,23 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
 
     private void dialogSave() {
         log.info("dialogSave: called for:" + selectedRestaurant.toString());
+        String normalizedLocationAddress = dialogRestLocationAddress.getValue() == null
+                ? ""
+                : dialogRestLocationAddress.getValue().trim();
+        if (!normalizedLocationAddress.isBlank() && (dialogRestVerifiedLatitude == null || dialogRestVerifiedLongitude == null)) {
+            UIUtilities.showNotification("Verify the restaurant location on the map before saving.");
+            dialogOkButton.setEnabled(true);
+            return;
+        }
         if(dialogRestLocation.getValue()==null){
             selectedRestaurant.setTeamId(null);
         }else{
             selectedRestaurant.setTeamId(dialogRestLocation.getValue().getTeamId());
         }
+        selectedRestaurant.setLocationAddress(normalizedLocationAddress.isBlank() ? null : normalizedLocationAddress);
+        selectedRestaurant.setLocationLatitude(dialogRestVerifiedLatitude);
+        selectedRestaurant.setLocationLongitude(dialogRestVerifiedLongitude);
+        selectedRestaurant.setLocationVerifiedAt(normalizedLocationAddress.isBlank() ? null : dialogRestLocationVerifiedAt);
 
         if(dialogRestCommission.getValue()==null || dialogRestCommission.getValue().equals(0)){
             selectedRestaurant.setCommissionRate(0.0);
@@ -1138,6 +1267,73 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
             return;
         }
         dialogRestLogoPreview.setSrc(imageUrl);
+    }
+
+    private void clearDialogLocationVerification() {
+        dialogRestVerifiedLatitude = null;
+        dialogRestVerifiedLongitude = null;
+        dialogRestLocationVerifiedAt = null;
+    }
+
+    private void refreshDialogLocationStatus() {
+        dialogRestLocationLatitude.setValue(dialogRestVerifiedLatitude == null ? "" : String.format("%.6f", dialogRestVerifiedLatitude));
+        dialogRestLocationLongitude.setValue(dialogRestVerifiedLongitude == null ? "" : String.format("%.6f", dialogRestVerifiedLongitude));
+        if (dialogRestVerifiedLatitude == null || dialogRestVerifiedLongitude == null) {
+            dialogRestLocationStatus.setText("Map location not verified yet.");
+            return;
+        }
+        if (dialogRestLocationVerifiedAt == null) {
+            dialogRestLocationStatus.setText("Verified coordinates selected.");
+            return;
+        }
+        dialogRestLocationStatus.setText(
+                "Verified on map at "
+                        + dialogRestLocationVerifiedAt.toLocalDate()
+                        + " "
+                        + dialogRestLocationVerifiedAt.toLocalTime().withNano(0));
+    }
+
+    private void openRestaurantLocationPickerDialog() {
+        Long teamId = dialogRestLocation.getValue() == null ? selectedRestaurant.getTeamId() : dialogRestLocation.getValue().getTeamId();
+        Optional<DeliveryZoneService.BaseLocation> baseLocation = deliveryZoneService.getBaseLocation(teamId);
+        Optional<LocationLookupService.LookupResult> geocoded = locationLookupService.geocodeAddress(dialogRestLocationAddress.getValue());
+
+        LeafletPointPickerDialog.SelectedPoint centerPoint = geocoded
+                .map(result -> new LeafletPointPickerDialog.SelectedPoint(result.latitude(), result.longitude()))
+                .or(() -> baseLocation
+                        .filter(DeliveryZoneService.BaseLocation::hasCoordinates)
+                        .map(base -> new LeafletPointPickerDialog.SelectedPoint(base.latitude(), base.longitude())))
+                .orElse(new LeafletPointPickerDialog.SelectedPoint(51.037d, -113.402d));
+
+        LeafletPointPickerDialog.SelectedPoint initialSelection = dialogRestVerifiedLatitude != null && dialogRestVerifiedLongitude != null
+                ? new LeafletPointPickerDialog.SelectedPoint(dialogRestVerifiedLatitude, dialogRestVerifiedLongitude)
+                : geocoded.map(result -> new LeafletPointPickerDialog.SelectedPoint(result.latitude(), result.longitude())).orElse(null);
+
+        String helpText = geocoded.isPresent()
+                ? "The map is centered on the typed address. Click the exact storefront location, then confirm it."
+                : "Click the exact storefront location on the map, then confirm it.";
+
+        LeafletPointPickerDialog dialog = new LeafletPointPickerDialog(
+                "Verify Restaurant Location",
+                helpText,
+                centerPoint,
+                initialSelection,
+                point -> {
+                    dialogRestVerifiedLatitude = point.latitude();
+                    dialogRestVerifiedLongitude = point.longitude();
+                    dialogRestLocationVerifiedAt = LocalDateTime.now();
+                    refreshDialogLocationStatus();
+                    if (validationEnabled) {
+                        dialogValidate();
+                    }
+                });
+        dialog.open();
+    }
+
+    private void openDeliveryZonesDialog() {
+        Long initialTeamId = locationChoice.isAllLocationsSelected() ? null : locationChoice.getSelectedLocationId();
+        DeliveryZonesDialog dialog = new DeliveryZonesDialog(deliveryZoneService, teamsRepository, initialTeamId);
+        dialog.open();
     }
 
     private Integer getDoubleAsInteger(Double value){

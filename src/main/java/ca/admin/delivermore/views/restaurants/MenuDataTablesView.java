@@ -9,6 +9,8 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 
+import ca.admin.delivermore.collector.data.service.TeamsRepository;
+import ca.admin.delivermore.data.service.DeliveryZoneService;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
 import jakarta.annotation.security.RolesAllowed;
@@ -18,7 +20,10 @@ import jakarta.annotation.security.RolesAllowed;
 @RolesAllowed("ADMIN")
 public class MenuDataTablesView extends VerticalLayout {
 
-    public MenuDataTablesView(RestaurantMenuEditorService restaurantMenuEditorService) {
+        public MenuDataTablesView(
+            RestaurantMenuEditorService restaurantMenuEditorService,
+            DeliveryZoneService deliveryZoneService,
+            TeamsRepository teamsRepository) {
         setSizeFull();
         setPadding(true);
         setSpacing(true);
@@ -30,8 +35,12 @@ public class MenuDataTablesView extends VerticalLayout {
         Span helper = new Span("Use Data Tables to manage shared checkout and menu configuration lists.");
         helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        HorizontalLayout actions = new HorizontalLayout(new MenuDataTablesMenuBar(restaurantMenuEditorService, () -> {
-        }));
+        HorizontalLayout actions = new HorizontalLayout(new MenuDataTablesMenuBar(
+            restaurantMenuEditorService,
+            deliveryZoneService,
+            teamsRepository,
+            () -> {
+            }));
         actions.setPadding(false);
         actions.setSpacing(true);
 

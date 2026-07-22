@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import ca.admin.delivermore.collector.data.entity.Restaurant;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder;
@@ -24,6 +26,7 @@ import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderTaxRateR
 public class RestaurantMenuOrderSubmissionService {
 
     private static final String SUBMISSION_SOURCE = "ADMIN_PREVIEW";
+    private static final Logger log = LoggerFactory.getLogger(RestaurantMenuOrderSubmissionService.class);
 
     private final RestaurantMenuOrderPreviewService previewService;
     private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
@@ -33,6 +36,8 @@ public class RestaurantMenuOrderSubmissionService {
     private final StagedRestaurantOrderWorkflowService workflowService;
     private final StagedRestaurantOrderPayloadProjectionService payloadProjectionService;
     private final TabletOrderDispatchService tabletOrderDispatchService;
+    private final DeliveryZoneService deliveryZoneService;
+    private final CustomerProfileService customerProfileService;
 
     public RestaurantMenuOrderSubmissionService(
             RestaurantMenuOrderPreviewService previewService,
@@ -42,7 +47,9 @@ public class RestaurantMenuOrderSubmissionService {
             StagedRestaurantOrderTaxRateRepository stagedRestaurantOrderTaxRateRepository,
             StagedRestaurantOrderWorkflowService workflowService,
             StagedRestaurantOrderPayloadProjectionService payloadProjectionService,
-            TabletOrderDispatchService tabletOrderDispatchService) {
+            TabletOrderDispatchService tabletOrderDispatchService,
+            DeliveryZoneService deliveryZoneService,
+            CustomerProfileService customerProfileService) {
         this.previewService = previewService;
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
@@ -51,6 +58,8 @@ public class RestaurantMenuOrderSubmissionService {
         this.workflowService = workflowService;
         this.payloadProjectionService = payloadProjectionService;
         this.tabletOrderDispatchService = tabletOrderDispatchService;
+        this.deliveryZoneService = deliveryZoneService;
+        this.customerProfileService = customerProfileService;
     }
 
     public SubmissionResult submitOrder(SubmitOrderRequest request) {
@@ -71,7 +80,14 @@ public class RestaurantMenuOrderSubmissionService {
         double itemTax = roundCurrency(usedCategoryTaxes.values().stream().mapToDouble(CategoryTaxLine::amount).sum());
 
         double serviceFeeTax = calculateNamedTax(serviceFee, previewData.serviceFeeTax());
-        double deliveryFee = roundCurrency(previewData.deliveryFee());
+        DeliveryZoneService.DeliveryQuote deliveryQuote = deliveryZoneService.quoteForRestaurant(
+            restaurant,
+            request.customerLatitude(),
+            request.customerLongitude());
+        if (!deliveryQuote.matched()) {
+            throw new IllegalStateException(deliveryQuote.message());
+        }
+        double deliveryFee = roundCurrency(deliveryQuote.deliveryFee());
         double deliveryFeeTax = calculateNamedTax(deliveryFee, previewData.deliveryFeeTax());
 
         double tip = isOnlinePayment(request.paymentMethod()) ? roundCurrency(request.tip()) : 0d;
@@ -89,6 +105,11 @@ public class RestaurantMenuOrderSubmissionService {
         stagedOrder.setStreetAddress(request.street().trim());
         stagedOrder.setCity(request.city().trim());
         stagedOrder.setPostalCode(trimToEmpty(request.postalCode()));
+        stagedOrder.setCustomerLatitude(request.customerLatitude());
+        stagedOrder.setCustomerLongitude(request.customerLongitude());
+        stagedOrder.setLocationConfirmedAt(now);
+        stagedOrder.setDeliveryDistanceKm(deliveryQuote.distanceKm());
+        stagedOrder.setDeliveryZoneName(trimToEmpty(deliveryQuote.zoneName()));
         stagedOrder.setPaymentMethod(request.paymentMethod().trim());
         stagedOrder.setInPersonDelivery(request.inPersonDelivery());
         stagedOrder.setSubtotal(subtotal);
@@ -108,6 +129,25 @@ public class RestaurantMenuOrderSubmissionService {
         stagedOrder.setApprovalStatus(ApprovalStatus.PENDING_APPROVAL);
         stagedOrder.setApprovalRequestedAt(now);
         stagedOrder.setStatusReason("Waiting for approval before Tookan submission.");
+
+        try {
+            Long customerProfileId = customerProfileService.recordCheckoutOrder(
+                    restaurant.getRestaurantId(),
+                    restaurant.getName(),
+                    request.contactName(),
+                    request.contactEmail(),
+                    request.contactPhone(),
+                    request.street(),
+                    request.city(),
+                    request.postalCode(),
+                    request.customerLatitude(),
+                    request.customerLongitude(),
+                    total,
+                    now);
+            stagedOrder.setCustomerProfileId(customerProfileId);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to update customer profile for staged order submit: {}", ex.getMessage());
+        }
 
         String orderSummary = buildOrderSummary(
                 request,
@@ -164,6 +204,9 @@ public class RestaurantMenuOrderSubmissionService {
         }
         if (isBlank(request.paymentMethod())) {
             throw new IllegalArgumentException("Payment method is required");
+        }
+        if (request.customerLatitude() == null || request.customerLongitude() == null) {
+            throw new IllegalArgumentException("Confirm the customer location on the map before placing the order");
         }
         if (request.tip() < 0d) {
             throw new IllegalArgumentException("Tip cannot be negative");
@@ -614,6 +657,8 @@ public class RestaurantMenuOrderSubmissionService {
             String street,
             String city,
             String postalCode,
+            Double customerLatitude,
+            Double customerLongitude,
             String paymentMethod,
             boolean inPersonDelivery,
             double tip,
