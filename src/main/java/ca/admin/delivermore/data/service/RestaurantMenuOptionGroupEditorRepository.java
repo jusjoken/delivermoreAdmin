@@ -16,6 +16,8 @@ public interface RestaurantMenuOptionGroupEditorRepository extends JpaRepository
 
     List<RestaurantMenuOptionGroup> findByMenuVersionIdAndItemId(Long menuVersionId, Long itemId);
 
+    List<RestaurantMenuOptionGroup> findByMenuVersionIdAndItemSizeIdOrderByDisplayOrderAscNameAsc(Long menuVersionId, Long itemSizeId);
+
     List<RestaurantMenuOptionGroup> findByMenuVersionIdAndItemSizeId(Long menuVersionId, Long itemSizeId);
 
     List<RestaurantMenuOptionGroup> findByMenuVersionIdAndSourceGroupId(Long menuVersionId, Long sourceGroupId);

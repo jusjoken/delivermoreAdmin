@@ -86,6 +86,8 @@ public class RestaurantMenuEditorService {
     private static final String SERVICE_FEE_TAX_SETTING = "service_fee_tax";
     private static final String DELIVERY_FEE_TAX_SETTING = "delivery_fee_tax";
     private static final String CHECKOUT_SERVICE_FEE_RATE_SETTING = "service_fee_rate";
+    private static final String CHECKOUT_TIMEOUT_MINUTES_SETTING = "checkout_timeout_minutes";
+    private static final String CHECKOUT_AUTO_APPROVE_MINUTES_SETTING = "checkout_auto_approve_minutes";
     private static final String CHECKOUT_DELIVERY_FEE_INFO_TEXT_SETTING = "delivery_fee_info_text";
     private static final String CHECKOUT_FEES_TAXES_INFO_TEXT_SETTING = "fees_taxes_info_text";
     private static final String ITEM_TAXATION_CATEGORY_SETTING_PREFIX = "item_taxation_category_";
@@ -171,6 +173,14 @@ public class RestaurantMenuEditorService {
         double rate = getDoubleSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_SERVICE_FEE_RATE_SETTING, 0d);
         double normalized = rate > 1d ? rate / 100d : rate;
         return normalizeDecimal(normalized, 6);
+    }
+
+    public int getCheckoutTimeoutMinutes() {
+        return Math.max(1, getIntegerSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_TIMEOUT_MINUTES_SETTING, 10));
+    }
+
+    public int getCheckoutAutoApproveMinutes() {
+        return Math.max(1, getIntegerSetting(CHECKOUT_SETTINGS_SECTION, CHECKOUT_AUTO_APPROVE_MINUTES_SETTING, 45));
     }
 
     public String getCheckoutDeliveryFeeInfoText() {
@@ -355,6 +365,24 @@ public class RestaurantMenuEditorService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutTimeoutMinutes(int value) {
+        saveIntegerSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_TIMEOUT_MINUTES_SETTING,
+                "Global checkout timeout in minutes",
+                Math.max(1, value));
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveCheckoutAutoApproveMinutes(int value) {
+        saveIntegerSetting(
+                CHECKOUT_SETTINGS_SECTION,
+                CHECKOUT_AUTO_APPROVE_MINUTES_SETTING,
+                "Default customer-facing ETA minutes used when a restaurant auto-approves checkout orders",
+                Math.max(1, value));
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     public void saveCheckoutDeliveryFeeInfoText(String value) {
         saveStringSetting(
                 CHECKOUT_SETTINGS_SECTION,
@@ -511,6 +539,24 @@ public class RestaurantMenuEditorService {
         }
     }
 
+    private int getIntegerSetting(String section, String settingName, int defaultValue) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            return defaultValue;
+        }
+
+        String raw = trimToNull(setting.getValue());
+        if (raw == null) {
+            return defaultValue;
+        }
+
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
     private void saveDoubleSetting(String section, String settingName, String description, double value) {
         SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
         if (setting == null) {
@@ -519,6 +565,19 @@ public class RestaurantMenuEditorService {
             setting.setName(settingName);
             setting.setDescription(description);
             setting.setValueType(SettingEntity.ValueType.DOUBLE);
+        }
+        setting.setValue(value);
+        settingRepository.save(setting);
+    }
+
+    private void saveIntegerSetting(String section, String settingName, String description, int value) {
+        SettingEntity setting = settingRepository.findBySectionAndName(section, settingName);
+        if (setting == null) {
+            setting = new SettingEntity();
+            setting.setSection(section);
+            setting.setName(settingName);
+            setting.setDescription(description);
+            setting.setValueType(SettingEntity.ValueType.INTEGER);
         }
         setting.setValue(value);
         settingRepository.save(setting);
@@ -889,7 +948,8 @@ public class RestaurantMenuEditorService {
     }
 
     public List<RestaurantMenuOptionGroup> listOptionGroupsForItemSize(Long menuVersionId, Long itemSizeId) {
-        return restaurantMenuOptionGroupEditorRepository.findByMenuVersionIdAndItemSizeId(menuVersionId, itemSizeId);
+        return restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndItemSizeIdOrderByDisplayOrderAscNameAsc(menuVersionId, itemSizeId);
     }
 
     public List<RestaurantMenuOption> listOptionsForGroup(Long optionGroupId) {
@@ -908,6 +968,111 @@ public class RestaurantMenuEditorService {
             clearDefaultOptionForGroup(saved.getOptionGroupId(), saved.getId());
         }
         return saved;
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveItemOptionGroupOrder(Long menuVersionId, Long itemId, List<Long> orderedGroupIds) {
+        List<RestaurantMenuOptionGroup> currentGroups = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndItemIdOrderByDisplayOrderAscNameAsc(menuVersionId, itemId);
+        if (currentGroups.isEmpty()) {
+            return;
+        }
+
+        Map<Long, RestaurantMenuOptionGroup> byId = new LinkedHashMap<>();
+        for (RestaurantMenuOptionGroup group : currentGroups) {
+            if (group.getId() != null) {
+                byId.put(group.getId(), group);
+            }
+        }
+
+        List<RestaurantMenuOptionGroup> reordered = new ArrayList<>();
+        if (orderedGroupIds != null) {
+            for (Long groupId : orderedGroupIds) {
+                RestaurantMenuOptionGroup group = byId.remove(groupId);
+                if (group != null) {
+                    reordered.add(group);
+                }
+            }
+        }
+        reordered.addAll(byId.values());
+
+        for (int i = 0; i < reordered.size(); i++) {
+            reordered.get(i).setDisplayOrder(i + 1);
+        }
+        restaurantMenuOptionGroupEditorRepository.saveAll(reordered);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveCategoryOptionGroupOrder(Long menuVersionId, Long categoryId, List<Long> orderedGroupIds) {
+        List<RestaurantMenuOptionGroup> currentGroups = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdAndCategoryIdOrderByDisplayOrderAscNameAsc(menuVersionId, categoryId)
+                .stream()
+                .filter(group -> group.getItemId() == null && group.getItemSizeId() == null)
+                .toList();
+        if (currentGroups.isEmpty()) {
+            return;
+        }
+
+        Map<Long, RestaurantMenuOptionGroup> byId = new LinkedHashMap<>();
+        for (RestaurantMenuOptionGroup group : currentGroups) {
+            if (group.getId() != null) {
+                byId.put(group.getId(), group);
+            }
+        }
+
+        List<RestaurantMenuOptionGroup> reordered = new ArrayList<>();
+        if (orderedGroupIds != null) {
+            for (Long groupId : orderedGroupIds) {
+                RestaurantMenuOptionGroup group = byId.remove(groupId);
+                if (group != null) {
+                    reordered.add(group);
+                }
+            }
+        }
+        reordered.addAll(byId.values());
+
+        for (int i = 0; i < reordered.size(); i++) {
+            reordered.get(i).setDisplayOrder(i + 1);
+        }
+        restaurantMenuOptionGroupEditorRepository.saveAll(reordered);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void saveOptionOrder(Long menuVersionId, Long optionGroupId, List<Long> orderedOptionIds) {
+        RestaurantMenuOptionGroup group = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId)
+                .orElseThrow(() -> new IllegalStateException("Choice group not found: " + optionGroupId));
+        if (!menuVersionId.equals(group.getMenuVersionId())) {
+            throw new IllegalStateException("Choice group belongs to a different menu version");
+        }
+
+        List<RestaurantMenuOption> currentOptions = restaurantMenuOptionEditorRepository
+                .findByOptionGroupIdOrderByDisplayOrderAscNameAsc(optionGroupId);
+        if (currentOptions.isEmpty()) {
+            return;
+        }
+
+        Map<Long, RestaurantMenuOption> byId = new LinkedHashMap<>();
+        for (RestaurantMenuOption option : currentOptions) {
+            if (option.getId() != null) {
+                byId.put(option.getId(), option);
+            }
+        }
+
+        List<RestaurantMenuOption> reordered = new ArrayList<>();
+        if (orderedOptionIds != null) {
+            for (Long optionId : orderedOptionIds) {
+                RestaurantMenuOption option = byId.remove(optionId);
+                if (option != null) {
+                    reordered.add(option);
+                }
+            }
+        }
+        reordered.addAll(byId.values());
+
+        for (int i = 0; i < reordered.size(); i++) {
+            reordered.get(i).setDisplayOrder(i + 1);
+        }
+        restaurantMenuOptionEditorRepository.saveAll(reordered);
     }
 
     @org.springframework.transaction.annotation.Transactional

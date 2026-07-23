@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import ca.admin.delivermore.collector.data.entity.Restaurant;
 import ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder;
@@ -26,7 +24,6 @@ import ca.admin.delivermore.collector.data.service.StagedRestaurantOrderTaxRateR
 public class RestaurantMenuOrderSubmissionService {
 
     private static final String SUBMISSION_SOURCE = "ADMIN_PREVIEW";
-    private static final Logger log = LoggerFactory.getLogger(RestaurantMenuOrderSubmissionService.class);
 
     private final RestaurantMenuOrderPreviewService previewService;
     private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
@@ -37,7 +34,7 @@ public class RestaurantMenuOrderSubmissionService {
     private final StagedRestaurantOrderPayloadProjectionService payloadProjectionService;
     private final TabletOrderDispatchService tabletOrderDispatchService;
     private final DeliveryZoneService deliveryZoneService;
-    private final CustomerProfileService customerProfileService;
+    private final RestaurantMenuEditorService restaurantMenuEditorService;
 
     public RestaurantMenuOrderSubmissionService(
             RestaurantMenuOrderPreviewService previewService,
@@ -49,7 +46,7 @@ public class RestaurantMenuOrderSubmissionService {
             StagedRestaurantOrderPayloadProjectionService payloadProjectionService,
             TabletOrderDispatchService tabletOrderDispatchService,
             DeliveryZoneService deliveryZoneService,
-            CustomerProfileService customerProfileService) {
+            RestaurantMenuEditorService restaurantMenuEditorService) {
         this.previewService = previewService;
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
@@ -59,7 +56,7 @@ public class RestaurantMenuOrderSubmissionService {
         this.payloadProjectionService = payloadProjectionService;
         this.tabletOrderDispatchService = tabletOrderDispatchService;
         this.deliveryZoneService = deliveryZoneService;
-        this.customerProfileService = customerProfileService;
+        this.restaurantMenuEditorService = restaurantMenuEditorService;
     }
 
     public SubmissionResult submitOrder(SubmitOrderRequest request) {
@@ -119,35 +116,18 @@ public class RestaurantMenuOrderSubmissionService {
         stagedOrder.setItemTax(itemTax);
         stagedOrder.setDeliveryFee(deliveryFee);
         stagedOrder.setDeliveryFeeTax(deliveryFeeTax);
+        stagedOrder.setDriveMinutesToCustomer(deliveryQuote.driveMinutesToCustomer());
         stagedOrder.setTip(tip);
         stagedOrder.setTotal(total);
         stagedOrder.setCustomerComments(trimToEmpty(request.comments()));
         stagedOrder.setSubmittedAt(now);
         stagedOrder.setStatusUpdatedAt(now);
         stagedOrder.setAutoApproved(restaurant.getAutoApproveOrders());
+        stagedOrder.setCheckoutTimeoutMinutes(previewData.checkoutTimeoutMinutes());
 
         stagedOrder.setApprovalStatus(ApprovalStatus.PENDING_APPROVAL);
         stagedOrder.setApprovalRequestedAt(now);
         stagedOrder.setStatusReason("Waiting for approval before Tookan submission.");
-
-        try {
-            Long customerProfileId = customerProfileService.recordCheckoutOrder(
-                    restaurant.getRestaurantId(),
-                    restaurant.getName(),
-                    request.contactName(),
-                    request.contactEmail(),
-                    request.contactPhone(),
-                    request.street(),
-                    request.city(),
-                    request.postalCode(),
-                    request.customerLatitude(),
-                    request.customerLongitude(),
-                    total,
-                    now);
-            stagedOrder.setCustomerProfileId(customerProfileId);
-        } catch (RuntimeException ex) {
-            log.warn("Unable to update customer profile for staged order submit: {}", ex.getMessage());
-        }
 
         String orderSummary = buildOrderSummary(
                 request,
@@ -169,10 +149,14 @@ public class RestaurantMenuOrderSubmissionService {
         tabletOrderDispatchService.dispatchOrderPush(stagedOrder);
 
         if (restaurant.getAutoApproveOrders()) {
-            StagedRestaurantOrder approvedOrder = workflowService.approve(stagedOrder.getId());
+            int autoApproveMinutes = restaurantMenuEditorService.getCheckoutAutoApproveMinutes();
+            StagedRestaurantOrder approvedOrder = workflowService.accept(stagedOrder.getId(), autoApproveMinutes);
             return new SubmissionResult(
                     approvedOrder.getId(),
                     approvedOrder.getApprovalStatus(),
+                    approvedOrder.getCheckoutTimeoutMinutes(),
+                    approvedOrder.getApprovedAt(),
+                approvedOrder.getRestaurantMinutesToCustomer(),
                     "Order #" + approvedOrder.getId() + " auto-approved and saved as OrderDetail #"
                             + approvedOrder.getOrderDetailId() + ". Tookan submission is the next phase.");
         }
@@ -180,7 +164,36 @@ public class RestaurantMenuOrderSubmissionService {
         return new SubmissionResult(
                 stagedOrder.getId(),
                 stagedOrder.getApprovalStatus(),
+                stagedOrder.getCheckoutTimeoutMinutes(),
+                stagedOrder.getApprovalRequestedAt(),
+                stagedOrder.getRestaurantMinutesToCustomer(),
                 "Order #" + stagedOrder.getId() + " saved pending approval.");
+    }
+
+    public OrderStatusSnapshot getOrderStatus(Long stagedOrderId) {
+        StagedRestaurantOrder stagedOrder = stagedRestaurantOrderRepository.findById(stagedOrderId)
+                .orElseThrow(() -> new IllegalArgumentException("Staged order not found: " + stagedOrderId));
+        int timeoutMinutes = stagedOrder.getCheckoutTimeoutMinutes() == null ? 10 : Math.max(1, stagedOrder.getCheckoutTimeoutMinutes());
+        LocalDateTime approvalRequestedAt = stagedOrder.getApprovalRequestedAt() == null
+                ? stagedOrder.getSubmittedAt()
+                : stagedOrder.getApprovalRequestedAt();
+        LocalDateTime approvalDeadlineAt = approvalRequestedAt == null ? null : approvalRequestedAt.plusMinutes(timeoutMinutes);
+        return new OrderStatusSnapshot(
+                stagedOrder.getId(),
+                stagedOrder.getRestaurantName(),
+                stagedOrder.getApprovalStatus(),
+                stagedOrder.getStatusReason(),
+                approvalRequestedAt,
+                approvalDeadlineAt,
+                timeoutMinutes,
+                stagedOrder.getDriveMinutesToCustomer(),
+                stagedOrder.getRestaurantMinutesToCustomer(),
+                stagedOrder.getApprovedAt(),
+                stagedOrder.getStatusUpdatedAt());
+    }
+
+    public StagedRestaurantOrder markOrderMissed(Long stagedOrderId, String reason) {
+        return workflowService.markMissed(stagedOrderId, reason);
     }
 
     private void validateRequest(SubmitOrderRequest request) {
@@ -646,7 +659,27 @@ public class RestaurantMenuOrderSubmissionService {
     private record CategoryTaxLine(String category, String taxName, double ratePercent, double amount) {
     }
 
-    public record SubmissionResult(Long stagedOrderId, ApprovalStatus status, String message) {
+        public record SubmissionResult(
+            Long stagedOrderId,
+            ApprovalStatus status,
+            Integer checkoutTimeoutMinutes,
+            LocalDateTime approvalRequestedAt,
+            Integer restaurantMinutesToCustomer,
+            String message) {
+        }
+
+        public record OrderStatusSnapshot(
+            Long stagedOrderId,
+            String restaurantName,
+            ApprovalStatus status,
+            String statusReason,
+            LocalDateTime approvalRequestedAt,
+            LocalDateTime approvalDeadlineAt,
+            int checkoutTimeoutMinutes,
+            Integer driveMinutesToCustomer,
+            Integer restaurantMinutesToCustomer,
+            LocalDateTime approvedAt,
+            LocalDateTime statusUpdatedAt) {
     }
 
     public record SubmitOrderRequest(

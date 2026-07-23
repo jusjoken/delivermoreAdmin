@@ -47,6 +47,7 @@ public class DeliveryZoneService {
             boolean matched,
             double deliveryFee,
             Double distanceKm,
+            Integer driveMinutesToCustomer,
             String zoneName,
             String message) {
     }
@@ -133,7 +134,7 @@ public class DeliveryZoneService {
 
     public DeliveryQuote quoteForRestaurant(Restaurant restaurant, Double customerLatitude, Double customerLongitude) {
         if (restaurant == null) {
-            return new DeliveryQuote(false, false, 0d, null, null, "Restaurant was not found");
+            return new DeliveryQuote(false, false, 0d, null, null, null, "Restaurant was not found");
         }
 
         List<DeliveryZoneConfig> activeZones = listZonesForTeam(restaurant.getTeamId()).stream()
@@ -142,19 +143,20 @@ public class DeliveryZoneService {
                 .toList();
 
         if (activeZones.isEmpty()) {
-            return new DeliveryQuote(false, false, 0d, null, null, "Delivery zones must be configured before checkout can work.");
+            return new DeliveryQuote(false, false, 0d, null, null, null, "Delivery zones must be configured before checkout can work.");
         }
 
         BaseLocation baseLocation = getBaseLocation(restaurant.getTeamId())
                 .orElse(null);
         if (baseLocation == null || !baseLocation.hasCoordinates()) {
-            return new DeliveryQuote(true, false, 0d, null, null, "The base location is missing map coordinates.");
+            return new DeliveryQuote(true, false, 0d, null, null, null, "The base location is missing map coordinates.");
         }
         if (customerLatitude == null || customerLongitude == null) {
-            return new DeliveryQuote(true, false, 0d, null, null, "Confirm the delivery location on the map first.");
+            return new DeliveryQuote(true, false, 0d, null, null, null, "Confirm the delivery location on the map first.");
         }
 
         double distanceKm = round2(distanceKm(baseLocation.latitude(), baseLocation.longitude(), customerLatitude, customerLongitude));
+        Integer estimatedMinutes = estimateDeliveryMinutes(distanceKm);
         for (DeliveryZoneConfig zone : activeZones) {
             if (distanceKm <= normalizedPositive(zone.maxDistanceKm()) + 0.0001d) {
                 return new DeliveryQuote(
@@ -162,6 +164,7 @@ public class DeliveryZoneService {
                         true,
                         round2(normalizedNonNegative(zone.fee())),
                         distanceKm,
+                        estimatedMinutes,
                         normalizedName(zone.name()),
                         "Matched delivery zone " + normalizedName(zone.name()) + ".");
             }
@@ -172,6 +175,7 @@ public class DeliveryZoneService {
                 false,
                 0d,
                 distanceKm,
+                estimatedMinutes,
                 null,
                 "This address is outside all configured delivery zones.");
     }
@@ -271,5 +275,9 @@ public class DeliveryZoneService {
 
     private double round2(double value) {
         return Math.round(value * 100d) / 100d;
+    }
+
+    private Integer estimateDeliveryMinutes(double distanceKm) {
+        return Math.max(1, (int) Math.round(distanceKm * 3d));
     }
 }

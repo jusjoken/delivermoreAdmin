@@ -233,6 +233,30 @@ The current server sends these data payloads through FCM:
 - optional `statusReason`
 - optional `statusUpdatedAt`
 
+### Tablet ETA contract
+
+The tablet workflow now distinguishes two different timing fields:
+
+- `driveMinutesToCustomer`
+  - Server-estimated drive time between the restaurant and the customer.
+  - Sent to the tablet as informational context.
+
+- `restaurantMinutesToCustomer`
+  - The restaurant's total quoted time, including prep time and the trip to the customer.
+  - This is the value the tablet should send back on accept/approve when the restaurant confirms the order.
+
+Keep those meanings separate in tablet-side prompts and route handling. Do not reuse the drive-time estimate as the restaurant's accepted total time.
+
+Suggested prompt for tablet Copilot:
+
+```text
+Use the DeliverMore tablet order API under /api/tablet/orders.
+Read pending orders and payloads from the API, then call /{stagedOrderId}/accept or /{stagedOrderId}/approve with a JSON body that uses restaurantMinutesToCustomer for the restaurant's total quoted time, including prep and delivery.
+Use driveMinutesToCustomer only as the server-estimated drive time context from the payload or pending summary.
+Do not send driveMinutesToCustomer back as the accepted time.
+Keep checkoutTimeoutMinutes separate; it is the approval timeout, not the food ETA.
+```
+
 Before rollout, confirm the tablet build handles both payload types correctly and that the same build can safely register to either dev or prod only through configuration and provisioning.
 
 ## 4. Provisioning Flow In Production

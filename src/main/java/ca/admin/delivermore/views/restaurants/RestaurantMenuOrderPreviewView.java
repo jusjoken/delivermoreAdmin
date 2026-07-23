@@ -2,6 +2,9 @@ package ca.admin.delivermore.views.restaurants;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -11,6 +14,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
@@ -54,9 +62,12 @@ import ca.admin.delivermore.data.service.RestaurantMenuOrderPreviewService.SizeD
 import ca.admin.delivermore.data.service.DeliveryZoneService;
 import ca.admin.delivermore.data.service.CustomerProfileService;
 import ca.admin.delivermore.data.service.LocationLookupService;
+import ca.admin.delivermore.collector.data.entity.Restaurant;
+import ca.admin.delivermore.collector.data.service.RestaurantRepository;
 import ca.admin.delivermore.components.custom.LeafletPointPickerDialog;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.LineItemRequest;
+import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.OrderStatusSnapshot;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SelectedOptionRequest;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SubmissionResult;
 import ca.admin.delivermore.data.service.RestaurantMenuOrderSubmissionService.SubmitOrderRequest;
@@ -81,6 +92,12 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private final DeliveryZoneService deliveryZoneService;
     private final LocationLookupService locationLookupService;
     private final CustomerProfileService customerProfileService;
+    private final RestaurantRepository restaurantRepository;
+    private final ScheduledExecutorService checkoutWaitScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "checkout-wait-dialog");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private Long restaurantId;
     private PreviewData previewData;
@@ -103,6 +120,25 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private boolean mobileOverlayMode;
     private boolean cartOverlayOpen;
     private boolean updatingTipFields;
+    private ScheduledFuture<?> checkoutWaitFuture;
+    private Dialog checkoutWaitDialog;
+    private List<OrderLine> lastSubmittedCartSnapshot = List.of();
+    private CheckoutState lastSubmittedCheckoutSnapshot;
+    private final AtomicInteger checkoutWaitRestaurantIndex = new AtomicInteger();
+    private List<Restaurant> checkoutWaitRestaurants = List.of();
+    private Long checkoutWaitOrderId;
+    private LocalDateTime checkoutWaitDeadlineAt;
+    private Span checkoutWaitCountdownValue;
+    private Span checkoutWaitStatusValue;
+    private Span checkoutWaitRestaurantNameValue;
+    private Span checkoutWaitRestaurantTaglineValue;
+    private Div checkoutWaitRestaurantTile;
+    private H4 checkoutWaitTitle;
+    private Div checkoutWaitProgressFill;
+    private Button checkoutWaitRetryButton;
+    private Button checkoutWaitCloseButton;
+    private boolean checkoutWaitRestoreOnClose;
+    private int checkoutWaitTickCounter;
     private VerticalLayout checkoutTipBlock;
     private RadioButtonGroup<String> checkoutTipModeField;
     private NumberField checkoutTipAmountField;
@@ -116,12 +152,14 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             RestaurantMenuOrderSubmissionService submissionService,
             DeliveryZoneService deliveryZoneService,
             LocationLookupService locationLookupService,
-            CustomerProfileService customerProfileService) {
+            CustomerProfileService customerProfileService,
+            RestaurantRepository restaurantRepository) {
         this.previewService = previewService;
         this.submissionService = submissionService;
         this.deliveryZoneService = deliveryZoneService;
         this.locationLookupService = locationLookupService;
         this.customerProfileService = customerProfileService;
+        this.restaurantRepository = restaurantRepository;
         setSizeFull();
         setPadding(false);
         setSpacing(true);
@@ -578,9 +616,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
                 activeGroups.addAll(selectedSize.optionGroups());
             }
 
-            activeGroups.stream()
-                    .sorted(Comparator.comparing(OptionGroupData::name, Comparator.nullsLast(String::compareToIgnoreCase)))
-                    .forEach(group -> {
+            activeGroups.forEach(group -> {
                         GroupCollector collector = buildGroupCollector(group, updateTotals);
                         collectors.add(collector);
                         groupsContainer.add(collector.component());
@@ -827,9 +863,6 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             card.add(createMutedText(deliveryQuote.message()));
         } else if (!deliveryQuote.matched()) {
             card.add(createMutedText(deliveryQuote.message()));
-        } else if (deliveryQuote.zoneName() != null && !deliveryQuote.zoneName().isBlank()) {
-            card.add(createMutedText("Zone: " + deliveryQuote.zoneName()
-                    + (deliveryQuote.distanceKm() == null ? "" : " | Base distance: " + formatDistance(deliveryQuote.distanceKm()))));
         }
 
         if (restaurantDistanceKm != null) {
@@ -1112,14 +1145,36 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             }
             try {
                 SubmissionResult result = submissionService.submitOrder(buildSubmitOrderRequest());
-                cartLines.clear();
-                checkoutState.clear();
-                applyDefaultCheckoutCityIfMissing();
-                renderCart();
-                if (mobileOverlayMode) {
-                    closeCartOverlay();
+                if (result.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.PENDING_APPROVAL) {
+                    lastSubmittedCartSnapshot = new ArrayList<>(cartLines);
+                    lastSubmittedCheckoutSnapshot = checkoutState.copy();
+                    cartLines.clear();
+                    checkoutState.clear();
+                    applyDefaultCheckoutCityIfMissing();
+                    renderCart();
+                    if (mobileOverlayMode) {
+                        closeCartOverlay();
+                    }
+                    showCheckoutWaitDialog(result);
+                } else if (result.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.APPROVED) {
+                    cartLines.clear();
+                    checkoutState.clear();
+                    applyDefaultCheckoutCityIfMissing();
+                    renderCart();
+                    if (mobileOverlayMode) {
+                        closeCartOverlay();
+                    }
+                    showApprovedCheckoutDialog(result.restaurantMinutesToCustomer());
+                } else {
+                    cartLines.clear();
+                    checkoutState.clear();
+                    applyDefaultCheckoutCityIfMissing();
+                    renderCart();
+                    if (mobileOverlayMode) {
+                        closeCartOverlay();
+                    }
+                    showSuccess(result.message());
                 }
-                showSuccess(result.message());
             } catch (IllegalArgumentException | IllegalStateException ex) {
                 showError(ex.getMessage());
             }
@@ -1164,6 +1219,381 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
                                                 selection.taxationCategory()))
                                         .toList()))
                         .toList());
+    }
+
+    private void showCheckoutWaitDialog(SubmissionResult result) {
+        closeCheckoutWaitDialog();
+
+        checkoutWaitOrderId = result.stagedOrderId();
+        int timeoutMinutes = result.checkoutTimeoutMinutes() == null ? 10 : Math.max(1, result.checkoutTimeoutMinutes());
+        LocalDateTime requestedAt = result.approvalRequestedAt() == null ? LocalDateTime.now() : result.approvalRequestedAt();
+        checkoutWaitDeadlineAt = requestedAt.plusMinutes(timeoutMinutes);
+        checkoutWaitRestaurants = restaurantRepository.getEffectiveRestaurants(LocalDate.now()).stream()
+                .filter(restaurant -> restaurant.getRestaurantId() != null
+                && !Objects.equals(restaurant.getRestaurantId(), previewData.restaurant().getRestaurantId())
+                && (Boolean.TRUE.equals(restaurant.getSendToTablet())
+                    || Boolean.TRUE.equals(restaurant.getAutoApproveOrders())))
+                .sorted(Comparator.comparing(restaurant -> restaurant.getName() == null ? "" : restaurant.getName()))
+                .toList();
+        checkoutWaitTickCounter = 0;
+        checkoutWaitRestaurantIndex.set(0);
+        checkoutWaitRestoreOnClose = false;
+
+        checkoutWaitDialog = new Dialog();
+        checkoutWaitDialog.setCloseOnEsc(false);
+        checkoutWaitDialog.setCloseOnOutsideClick(false);
+        checkoutWaitDialog.setDraggable(true);
+        checkoutWaitDialog.setResizable(true);
+        checkoutWaitDialog.setWidth("min(42rem, 92vw)");
+
+        checkoutWaitTitle = new H4("We are now receiving your order, please wait...");
+        Span waitSubtitle = new Span("While you wait here are some other options from DeliverMore.ca");
+        waitSubtitle.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        checkoutWaitStatusValue = new Span(result.message());
+        checkoutWaitStatusValue.getStyle().set("white-space", "pre-line");
+        checkoutWaitCountdownValue = new Span();
+        checkoutWaitRestaurantNameValue = new Span();
+        checkoutWaitRestaurantNameValue.getStyle().set("font-weight", "700");
+        checkoutWaitRestaurantTaglineValue = new Span();
+        checkoutWaitRestaurantTaglineValue.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        Div progressTrack = new Div();
+        progressTrack.getStyle().set("height", "0.65rem");
+        progressTrack.getStyle().set("border-radius", "999px");
+        progressTrack.getStyle().set("background", "var(--lumo-contrast-10pct)");
+        progressTrack.getStyle().set("overflow", "hidden");
+        checkoutWaitProgressFill = new Div();
+        checkoutWaitProgressFill.getStyle().set("height", "100%");
+        checkoutWaitProgressFill.getStyle().set("width", "0%");
+        checkoutWaitProgressFill.getStyle().set("background", "linear-gradient(90deg, var(--lumo-primary-color), var(--lumo-primary-color-50pct))");
+        progressTrack.add(checkoutWaitProgressFill);
+
+        checkoutWaitRestaurantTile = new Div();
+        checkoutWaitRestaurantTile.getStyle().set("padding", "var(--lumo-space-m)");
+        checkoutWaitRestaurantTile.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
+        checkoutWaitRestaurantTile.getStyle().set("background", "var(--lumo-base-color)");
+        checkoutWaitRestaurantTile.getStyle().set("box-shadow", "var(--lumo-box-shadow-xs)");
+        checkoutWaitRestaurantTile.getStyle().set("display", "flex");
+        checkoutWaitRestaurantTile.getStyle().set("flex-direction", "column");
+        checkoutWaitRestaurantTile.getStyle().set("gap", "var(--lumo-space-xs)");
+        checkoutWaitRestaurantTile.add(waitSubtitle, checkoutWaitRestaurantNameValue, checkoutWaitRestaurantTaglineValue);
+
+        checkoutWaitRetryButton = new Button("Try Again", event -> retryMissedCheckoutOrder());
+        checkoutWaitRetryButton.setVisible(false);
+        checkoutWaitRetryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        checkoutWaitCloseButton = new Button("Close", event -> handleCheckoutWaitClose());
+        checkoutWaitCloseButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        HorizontalLayout footer = new HorizontalLayout(checkoutWaitRetryButton, checkoutWaitCloseButton);
+        footer.setWidthFull();
+        footer.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+
+        VerticalLayout content = new VerticalLayout(checkoutWaitTitle, checkoutWaitStatusValue, checkoutWaitCountdownValue, progressTrack, checkoutWaitRestaurantTile, footer);
+        content.setPadding(false);
+        content.setSpacing(true);
+        content.setWidthFull();
+        checkoutWaitDialog.add(content);
+        checkoutWaitDialog.open();
+
+        refreshCheckoutWaitDialog();
+        UI currentUi = UI.getCurrent();
+        checkoutWaitFuture = checkoutWaitScheduler.scheduleAtFixedRate(() -> {
+            if (currentUi == null || checkoutWaitDialog == null || !checkoutWaitDialog.isOpened()) {
+                return;
+            }
+            currentUi.access(this::refreshCheckoutWaitDialog);
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    private void refreshCheckoutWaitDialog() {
+        if (checkoutWaitOrderId == null || checkoutWaitDeadlineAt == null || checkoutWaitDialog == null) {
+            return;
+        }
+
+        try {
+            OrderStatusSnapshot snapshot = submissionService.getOrderStatus(checkoutWaitOrderId);
+            if (snapshot.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.PENDING_APPROVAL
+                    && LocalDateTime.now().isAfter(checkoutWaitDeadlineAt)) {
+                submissionService.markOrderMissed(checkoutWaitOrderId, "Checkout timeout expired.");
+                snapshot = submissionService.getOrderStatus(checkoutWaitOrderId);
+            }
+
+            updateCheckoutWaitDialog(snapshot);
+
+            if (snapshot.status() != ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.PENDING_APPROVAL) {
+                handleResolvedCheckout(snapshot);
+            }
+        } catch (RuntimeException ex) {
+            checkoutWaitStatusValue.setText(ex.getMessage());
+            checkoutWaitCountdownValue.setText("Waiting for status update...");
+        }
+    }
+
+    private void updateCheckoutWaitDialog(OrderStatusSnapshot snapshot) {
+        long remainingSeconds = Math.max(0L, Duration.between(LocalDateTime.now(), checkoutWaitDeadlineAt).getSeconds());
+        long totalSeconds = Math.max(1L, Duration.between(snapshot.approvalRequestedAt(), checkoutWaitDeadlineAt).getSeconds());
+        double progress = 1d - ((double) remainingSeconds / (double) totalSeconds);
+        int progressPct = (int) Math.max(0, Math.min(100, Math.round(progress * 100d)));
+
+        checkoutWaitStatusValue.setText(switch (snapshot.status()) {
+            case APPROVED -> "Order accepted. Preparing your delivery.";
+            case DECLINED -> "Order rejected by the restaurant.";
+            case CANCELED -> "Order cancelled.";
+            case MISSED -> "Order missed. No answer before timeout.";
+            case PENDING_APPROVAL -> "We are now receiving your order, please wait...";
+        });
+        checkoutWaitCountdownValue.setText(formatCountdown(remainingSeconds) + " remaining");
+        checkoutWaitProgressFill.getStyle().set("width", progressPct + "%");
+
+        if (checkoutWaitRestaurants.isEmpty()) {
+            checkoutWaitRestaurantNameValue.setText(previewData.restaurant().getName());
+            checkoutWaitRestaurantTaglineValue.setText(trimToEmpty(previewData.restaurant().getTagline()));
+            return;
+        }
+
+        if (checkoutWaitTickCounter++ % 4 == 0) {
+            int nextIndex = checkoutWaitRestaurantIndex.getAndUpdate(value -> (value + 1) % checkoutWaitRestaurants.size());
+            Restaurant restaurant = checkoutWaitRestaurants.get(nextIndex);
+            checkoutWaitRestaurantNameValue.setText(restaurant.getName());
+            checkoutWaitRestaurantTaglineValue.setText(trimToEmpty(restaurant.getTagline()));
+        }
+    }
+
+    private void handleResolvedCheckout(OrderStatusSnapshot snapshot) {
+        if (snapshot.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.MISSED) {
+            stopCheckoutWaitPolling();
+            checkoutWaitRestoreOnClose = true;
+            checkoutWaitCountdownValue.setVisible(true);
+            if (checkoutWaitRestaurantTile != null) {
+                checkoutWaitRestaurantTile.setVisible(true);
+            }
+            checkoutWaitStatusValue.setText(
+                    "Order Missed\n"
+                    + "No answer from " + previewData.restaurant().getName() + "\n"
+                    + "This unlikely situation happens if:\n"
+                    + "- our staff are super busy and unable to handle your order fast enough\n"
+                    + "- we are experiencing severe connectivity issues\n"
+                    + "- there are other technical problems");
+            checkoutWaitRetryButton.setVisible(true);
+            checkoutWaitCloseButton.setText("Close");
+            checkoutWaitCountdownValue.setText("Select Try Again to resend your order, or Close to return to checkout.");
+            return;
+        }
+
+        switch (snapshot.status()) {
+            case APPROVED -> {
+                stopCheckoutWaitPolling();
+                checkoutWaitRestoreOnClose = false;
+                checkoutWaitRetryButton.setVisible(false);
+                checkoutWaitCloseButton.setText("Close");
+                closeCheckoutWaitDialog();
+                showApprovedCheckoutDialog(snapshot.restaurantMinutesToCustomer());
+            }
+            case DECLINED -> {
+                stopCheckoutWaitPolling();
+                checkoutWaitRestoreOnClose = true;
+                checkoutWaitRetryButton.setVisible(false);
+                checkoutWaitCloseButton.setText("Close");
+                if (checkoutWaitTitle != null) {
+                    checkoutWaitTitle.setText("We are now receiving your order, please wait...");
+                }
+                checkoutWaitStatusValue.getStyle().set("font-size", "var(--lumo-font-size-m)");
+                checkoutWaitStatusValue.getStyle().set("font-weight", "400");
+                checkoutWaitCountdownValue.setVisible(true);
+                if (checkoutWaitRestaurantTile != null) {
+                    checkoutWaitRestaurantTile.setVisible(true);
+                }
+                checkoutWaitStatusValue.setText(
+                        "Order rejected by " + previewData.restaurant().getName() + reasonSuffix(snapshot.statusReason()));
+                checkoutWaitCountdownValue.setText("You can close this dialog to return to checkout.");
+            }
+            case CANCELED -> {
+                stopCheckoutWaitPolling();
+                checkoutWaitRestoreOnClose = true;
+                checkoutWaitRetryButton.setVisible(false);
+                checkoutWaitCloseButton.setText("Close");
+                if (checkoutWaitTitle != null) {
+                    checkoutWaitTitle.setText("We are now receiving your order, please wait...");
+                }
+                checkoutWaitStatusValue.getStyle().set("font-size", "var(--lumo-font-size-m)");
+                checkoutWaitStatusValue.getStyle().set("font-weight", "400");
+                checkoutWaitCountdownValue.setVisible(true);
+                if (checkoutWaitRestaurantTile != null) {
+                    checkoutWaitRestaurantTile.setVisible(true);
+                }
+                String cancelMessage = previewData.restaurant().getName() + " has cancelled the order";
+                if (!isBlank(snapshot.statusReason())) {
+                    cancelMessage = cancelMessage + ". Reason: " + snapshot.statusReason().trim();
+                }
+                checkoutWaitStatusValue.setText(cancelMessage);
+                checkoutWaitCountdownValue.setText("You can close this dialog to return to checkout.");
+            }
+            default -> {
+                stopCheckoutWaitPolling();
+                checkoutWaitRestoreOnClose = false;
+                checkoutWaitRetryButton.setVisible(false);
+                checkoutWaitCloseButton.setText("Close");
+                if (checkoutWaitTitle != null) {
+                    checkoutWaitTitle.setText("We are now receiving your order, please wait...");
+                }
+                checkoutWaitStatusValue.getStyle().set("font-size", "var(--lumo-font-size-m)");
+                checkoutWaitStatusValue.getStyle().set("font-weight", "400");
+                checkoutWaitCountdownValue.setVisible(true);
+                if (checkoutWaitRestaurantTile != null) {
+                    checkoutWaitRestaurantTile.setVisible(true);
+                }
+            }
+        }
+    }
+
+    private String reasonSuffix(String reason) {
+        if (isBlank(reason)) {
+            return "";
+        }
+        return ". Reason: " + reason.trim();
+    }
+
+    private void showApprovedCheckoutDialog(Integer restaurantMinutesToCustomer) {
+        Dialog dialog = new Dialog();
+        dialog.setCloseOnOutsideClick(false);
+        dialog.setCloseOnEsc(true);
+        dialog.setDraggable(true);
+        dialog.setResizable(false);
+        dialog.setWidth("min(40rem, 92vw)");
+
+        Span thankYou = new Span("THANK YOU!");
+        thankYou.getStyle().set("font-size", "clamp(1.8rem, 4vw, 2.4rem)");
+        thankYou.getStyle().set("font-weight", "800");
+        thankYou.getStyle().set("letter-spacing", "0.04em");
+
+        Span acceptedLine = new Span(previewData.restaurant().getName() + " accepted your order.");
+        acceptedLine.getStyle().set("font-size", "var(--lumo-font-size-l)");
+        acceptedLine.getStyle().set("font-weight", "600");
+
+        Span emailLine = new Span("An email has been sent to you with your order details.");
+        emailLine.getStyle().set("font-size", "var(--lumo-font-size-m)");
+
+        int minutes = Math.max(1, restaurantMinutesToCustomer == null ? 45 : restaurantMinutesToCustomer);
+        Span etaLine = new Span("The restaurant estimates it will be ready and delivered in approx. " + minutes + " minutes.");
+        etaLine.getStyle().set("font-size", "var(--lumo-font-size-m)");
+        etaLine.getStyle().set("font-weight", "800");
+
+        VerticalLayout content = new VerticalLayout(thankYou, acceptedLine, emailLine, etaLine);
+        content.setPadding(false);
+        content.setSpacing(true);
+        content.setWidthFull();
+
+        Button close = new Button("Close", event -> dialog.close());
+        close.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(content);
+        dialog.getFooter().add(close);
+        dialog.open();
+    }
+
+    private void retryMissedCheckoutOrder() {
+        if (lastSubmittedCheckoutSnapshot == null || lastSubmittedCartSnapshot.isEmpty()) {
+            closeCheckoutWaitDialog();
+            showError("Order missed. Please rebuild the cart and try again.");
+            return;
+        }
+
+        cartLines.clear();
+        cartLines.addAll(lastSubmittedCartSnapshot);
+        checkoutState.restoreFrom(lastSubmittedCheckoutSnapshot);
+        applyDefaultCheckoutCityIfMissing();
+
+        try {
+            SubmissionResult result = submissionService.submitOrder(buildSubmitOrderRequest());
+            if (result.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.PENDING_APPROVAL) {
+                lastSubmittedCartSnapshot = new ArrayList<>(cartLines);
+                lastSubmittedCheckoutSnapshot = checkoutState.copy();
+                cartLines.clear();
+                checkoutState.clear();
+                applyDefaultCheckoutCityIfMissing();
+                renderCart();
+                if (mobileOverlayMode) {
+                    closeCartOverlay();
+                }
+                showCheckoutWaitDialog(result);
+                return;
+            }
+
+            if (result.status() == ca.admin.delivermore.collector.data.entity.StagedRestaurantOrder.ApprovalStatus.APPROVED) {
+                closeCheckoutWaitDialog();
+                cartLines.clear();
+                checkoutState.clear();
+                applyDefaultCheckoutCityIfMissing();
+                renderCart();
+                if (mobileOverlayMode) {
+                    closeCartOverlay();
+                }
+                showApprovedCheckoutDialog(result.restaurantMinutesToCustomer());
+                return;
+            }
+
+            closeCheckoutWaitDialog();
+            cartLines.clear();
+            checkoutState.clear();
+            applyDefaultCheckoutCityIfMissing();
+            renderCart();
+            if (mobileOverlayMode) {
+                closeCartOverlay();
+            }
+            showSuccess(result.message());
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            checkoutWaitStatusValue.setText("Could not retry order: " + ex.getMessage());
+            checkoutWaitCountdownValue.setText("Please close this dialog to return to checkout.");
+            showError(ex.getMessage());
+        }
+    }
+
+    private void restoreLastSubmittedCheckoutToCart() {
+        if (lastSubmittedCheckoutSnapshot == null || lastSubmittedCartSnapshot.isEmpty()) {
+            return;
+        }
+
+        cartLines.clear();
+        cartLines.addAll(lastSubmittedCartSnapshot);
+        checkoutState.restoreFrom(lastSubmittedCheckoutSnapshot);
+        applyDefaultCheckoutCityIfMissing();
+        renderCart();
+        if (mobileOverlayMode) {
+            openCartOverlay();
+        }
+    }
+
+    private void handleCheckoutWaitClose() {
+        if (checkoutWaitRestoreOnClose) {
+            restoreLastSubmittedCheckoutToCart();
+        }
+        closeCheckoutWaitDialog();
+    }
+
+    private void closeCheckoutWaitDialog() {
+        stopCheckoutWaitPolling();
+        if (checkoutWaitDialog != null) {
+            checkoutWaitDialog.close();
+            checkoutWaitDialog = null;
+        }
+        checkoutWaitOrderId = null;
+        checkoutWaitDeadlineAt = null;
+        checkoutWaitRestoreOnClose = false;
+    }
+
+    private void stopCheckoutWaitPolling() {
+        if (checkoutWaitFuture != null) {
+            checkoutWaitFuture.cancel(true);
+            checkoutWaitFuture = null;
+        }
+    }
+
+    private String formatCountdown(long remainingSeconds) {
+        long minutes = remainingSeconds / 60L;
+        long seconds = remainingSeconds % 60L;
+        return String.format(Locale.CANADA, "%02d:%02d", minutes, seconds);
     }
 
     private void applyFulfillmentRule(String paymentMethod, Checkbox fulfilmentOption) {
@@ -1344,7 +1774,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
 
     private DeliveryZoneService.DeliveryQuote resolveCurrentDeliveryQuote() {
         if (previewData == null || previewData.restaurant() == null) {
-            return new DeliveryZoneService.DeliveryQuote(false, true, 0d, null, null, "");
+            return new DeliveryZoneService.DeliveryQuote(false, true, 0d, null, null, null, "");
         }
         return deliveryZoneService.quoteForRestaurant(
                 previewData.restaurant(),
@@ -1812,6 +2242,10 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         return String.format(Locale.CANADA, "$%.2f", roundCurrency(value));
     }
 
+    private String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     private double roundCurrency(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
@@ -2171,6 +2605,45 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         private double tipAmount = 0d;
         private double tipPercent = 0d;
         private String comments = "";
+
+        private CheckoutState copy() {
+            CheckoutState copy = new CheckoutState();
+            copy.contactName = contactName;
+            copy.contactEmail = contactEmail;
+            copy.contactPhone = contactPhone;
+            copy.street = street;
+            copy.city = city;
+            copy.postalCode = postalCode;
+            copy.customerLatitude = customerLatitude;
+            copy.customerLongitude = customerLongitude;
+            copy.paymentMethod = paymentMethod;
+            copy.inPersonDelivery = inPersonDelivery;
+            copy.tipMode = tipMode;
+            copy.tipAmount = tipAmount;
+            copy.tipPercent = tipPercent;
+            copy.comments = comments;
+            return copy;
+        }
+
+        private void restoreFrom(CheckoutState copy) {
+            if (copy == null) {
+                return;
+            }
+            contactName = copy.contactName;
+            contactEmail = copy.contactEmail;
+            contactPhone = copy.contactPhone;
+            street = copy.street;
+            city = copy.city;
+            postalCode = copy.postalCode;
+            customerLatitude = copy.customerLatitude;
+            customerLongitude = copy.customerLongitude;
+            paymentMethod = copy.paymentMethod;
+            inPersonDelivery = copy.inPersonDelivery;
+            tipMode = copy.tipMode;
+            tipAmount = copy.tipAmount;
+            tipPercent = copy.tipPercent;
+            comments = copy.comments;
+        }
 
         private void clear() {
             contactName = "";

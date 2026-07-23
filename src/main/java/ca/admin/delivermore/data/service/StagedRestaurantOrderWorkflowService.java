@@ -39,6 +39,7 @@ public class StagedRestaurantOrderWorkflowService {
     private final RestaurantRepository restaurantRepository;
     private final EmailService emailService;
     private final TabletOrderDispatchService tabletOrderDispatchService;
+    private final CustomerProfileService customerProfileService;
 
     @Value("${app.orders.support-email}")
     private String supportEmail;
@@ -50,7 +51,8 @@ public class StagedRestaurantOrderWorkflowService {
             StagedRestaurantOrderLineOptionRepository stagedRestaurantOrderLineOptionRepository,
             RestaurantRepository restaurantRepository,
             EmailService emailService,
-            TabletOrderDispatchService tabletOrderDispatchService) {
+            TabletOrderDispatchService tabletOrderDispatchService,
+            CustomerProfileService customerProfileService) {
         this.stagedRestaurantOrderRepository = stagedRestaurantOrderRepository;
         this.orderDetailRepository = orderDetailRepository;
         this.stagedRestaurantOrderLineRepository = stagedRestaurantOrderLineRepository;
@@ -58,6 +60,7 @@ public class StagedRestaurantOrderWorkflowService {
         this.restaurantRepository = restaurantRepository;
         this.emailService = emailService;
         this.tabletOrderDispatchService = tabletOrderDispatchService;
+        this.customerProfileService = customerProfileService;
     }
 
     public List<StagedRestaurantOrder> listPendingApprovals() {
@@ -75,12 +78,23 @@ public class StagedRestaurantOrderWorkflowService {
     }
 
     @Transactional
-    public StagedRestaurantOrder approve(Long stagedOrderId) {
+    public StagedRestaurantOrder accept(Long stagedOrderId) {
+        return accept(stagedOrderId, null);
+    }
+
+    @Transactional
+    public StagedRestaurantOrder accept(Long stagedOrderId, Integer restaurantMinutesToCustomer) {
         StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
-        ensureCanTransition(stagedOrder, "approve");
+        ensureCanTransition(stagedOrder, "accept");
 
         OrderDetail orderDetail = buildOrderDetail(stagedOrder);
         orderDetailRepository.save(orderDetail);
+
+        saveAcceptedCustomerProfile(stagedOrder);
+
+        if (restaurantMinutesToCustomer != null) {
+            stagedOrder.setRestaurantMinutesToCustomer(Math.max(1, restaurantMinutesToCustomer));
+        }
 
         LocalDateTime now = LocalDateTime.now();
         stagedOrder.setApprovalStatus(ApprovalStatus.APPROVED);
@@ -94,11 +108,15 @@ public class StagedRestaurantOrderWorkflowService {
         return stagedOrder;
     }
 
+    public StagedRestaurantOrder approve(Long stagedOrderId) {
+        return accept(stagedOrderId);
+    }
+
     @Transactional
-    public StagedRestaurantOrder decline(Long stagedOrderId, String reason) {
+    public StagedRestaurantOrder reject(Long stagedOrderId, String reason) {
         StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
-        ensureCanTransition(stagedOrder, "decline");
-        stagedOrder.setStatusReason(requireReason(reason, "Decline reason is required."));
+        ensureCanTransition(stagedOrder, "reject");
+        stagedOrder.setStatusReason(requireReason(reason, "Reject reason is required."));
 
         stagedOrder.setApprovalStatus(ApprovalStatus.DECLINED);
         stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
@@ -106,6 +124,10 @@ public class StagedRestaurantOrderWorkflowService {
         tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
         sendDecisionEmailIfConfigured(stagedOrder);
         return stagedRestaurantOrderRepository.save(stagedOrder);
+    }
+
+    public StagedRestaurantOrder decline(Long stagedOrderId, String reason) {
+        return reject(stagedOrderId, reason);
     }
 
     @Transactional
@@ -120,6 +142,34 @@ public class StagedRestaurantOrderWorkflowService {
         tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
         sendDecisionEmailIfConfigured(stagedOrder);
         return stagedRestaurantOrderRepository.save(stagedOrder);
+    }
+
+    @Transactional
+    public StagedRestaurantOrder markMissed(Long stagedOrderId, String reason) {
+        StagedRestaurantOrder stagedOrder = getById(stagedOrderId);
+        ensureCanTransition(stagedOrder, "mark missed");
+
+        stagedOrder.setApprovalStatus(ApprovalStatus.MISSED);
+        String missedReason = optionalReason(reason);
+        stagedOrder.setStatusReason(missedReason == null ? "No answer before checkout timeout." : missedReason);
+        stagedOrder.setStatusUpdatedAt(LocalDateTime.now());
+        stagedOrder = stagedRestaurantOrderRepository.save(stagedOrder);
+        tabletOrderDispatchService.dispatchOrderStatusChangedPush(stagedOrder);
+        sendDecisionEmailIfConfigured(stagedOrder);
+        return stagedOrder;
+    }
+
+    public String displayApprovalStatus(ApprovalStatus status) {
+        if (status == null) {
+            return "";
+        }
+        return switch (status) {
+            case APPROVED -> "Accepted";
+            case DECLINED -> "Rejected";
+            case CANCELED -> "Cancelled";
+            case MISSED -> "Missed";
+            case PENDING_APPROVAL -> "Pending";
+        };
     }
 
     private StagedRestaurantOrder getById(Long stagedOrderId) {
@@ -215,6 +265,26 @@ public class StagedRestaurantOrderWorkflowService {
         orderDetail.setClientName(stagedOrder.getContactName());
         orderDetail.setOrderText(buildDriverOrderText(stagedOrder.getId()));
         return orderDetail;
+    }
+
+    private void saveAcceptedCustomerProfile(StagedRestaurantOrder stagedOrder) {
+        try {
+            customerProfileService.recordCheckoutOrder(
+                    stagedOrder.getRestaurantId(),
+                    stagedOrder.getRestaurantName(),
+                    stagedOrder.getContactName(),
+                    stagedOrder.getContactEmail(),
+                    stagedOrder.getContactPhone(),
+                    stagedOrder.getStreetAddress(),
+                    stagedOrder.getCity(),
+                    stagedOrder.getPostalCode(),
+                    stagedOrder.getCustomerLatitude(),
+                    stagedOrder.getCustomerLongitude(),
+                    defaultDouble(stagedOrder.getTotal()),
+                    stagedOrder.getApprovedAt() == null ? LocalDateTime.now() : stagedOrder.getApprovedAt());
+        } catch (RuntimeException ex) {
+            log.warn("Unable to record accepted customer profile for staged order {}: {}", stagedOrder.getId(), ex.getMessage());
+        }
     }
 
     private String buildDriverOrderText(Long stagedOrderId) {

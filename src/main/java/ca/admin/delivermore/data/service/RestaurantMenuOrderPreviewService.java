@@ -33,12 +33,13 @@ public class RestaurantMenuOrderPreviewService {
             String restaurantLogoImageUrl,
             String menuHeaderImageUrl,
             List<CategoryData> categories,
-        Map<String, TaxRateConfig> taxationRates,
-        TaxRateConfig serviceFeeTax,
-        TaxRateConfig deliveryFeeTax,
+            Map<String, TaxRateConfig> taxationRates,
+            TaxRateConfig serviceFeeTax,
+            TaxRateConfig deliveryFeeTax,
             String deliveryFeeInfoText,
             String feesTaxesInfoText,
-            double serviceFeeRate) {
+            double serviceFeeRate,
+            int checkoutTimeoutMinutes) {
     }
 
     public record CategoryData(
@@ -176,7 +177,8 @@ public class RestaurantMenuOrderPreviewService {
                 deliveryFeeTaxPct),
                 restaurantMenuEditorService.getCheckoutDeliveryFeeInfoText(),
                 restaurantMenuEditorService.getCheckoutFeesTaxesInfoText(),
-                restaurantMenuEditorService.getCheckoutServiceFeeRate());
+                restaurantMenuEditorService.getCheckoutServiceFeeRate(),
+                restaurantMenuEditorService.getCheckoutTimeoutMinutes());
     }
 
     private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuCategory category, RestaurantMenuItem item) {
@@ -223,15 +225,24 @@ public class RestaurantMenuOrderPreviewService {
         List<RestaurantMenuOptionGroup> itemGroups = restaurantMenuEditorService
             .listOptionGroupsForItem(menuVersionId, itemId);
 
-        Map<String, RestaurantMenuOptionGroup> mergedByKey = new LinkedHashMap<>();
-        inheritedGroups.forEach(group -> mergedByKey.put(buildGroupIdentityKey(group), group));
-        itemGroups.forEach(group -> mergedByKey.put(buildGroupIdentityKey(group), group));
+        List<OptionGroupData> merged = new ArrayList<>();
+        Set<String> seenGroupKeys = new java.util.HashSet<>();
 
-        return mergedByKey.values().stream()
-            .sorted(Comparator.comparing(RestaurantMenuOptionGroup::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
-                .thenComparing(RestaurantMenuOptionGroup::getName, Comparator.nullsLast(String::compareToIgnoreCase)))
-            .map(this::toOptionGroupData)
-            .toList();
+        for (RestaurantMenuOptionGroup group : inheritedGroups) {
+            String identityKey = buildGroupIdentityKey(group);
+            if (seenGroupKeys.add(identityKey)) {
+                merged.add(toOptionGroupData(group));
+            }
+        }
+
+        for (RestaurantMenuOptionGroup group : itemGroups) {
+            String identityKey = buildGroupIdentityKey(group);
+            if (seenGroupKeys.add(identityKey)) {
+                merged.add(toOptionGroupData(group));
+            }
+        }
+
+        return merged;
     }
 
         private String buildGroupIdentityKey(RestaurantMenuOptionGroup group) {

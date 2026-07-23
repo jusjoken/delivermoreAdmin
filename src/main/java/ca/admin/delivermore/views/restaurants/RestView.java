@@ -113,6 +113,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
     private Checkbox dialogRestAutoApproveOrders = new Checkbox();
     private Checkbox dialogRestSendToTablet = new Checkbox();
     private Checkbox dialogRestSendToTookan = new Checkbox();
+    private TextField dialogRestTagline = UIUtilities.getTextField("Tag line");
 
     private TextField dialogRestGlobalAuthCode = UIUtilities.getTextField("Global Code");
     private TextField dialogRestFetchMenuKey = UIUtilities.getTextField("Fetch Menu Key");
@@ -798,6 +799,11 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestSendToTookan.addValueChangeListener(e -> {
             if(validationEnabled) dialogValidate();
         });
+        dialogRestTagline.setReadOnly(false);
+        dialogRestTagline.setWidthFull();
+        dialogRestTagline.addValueChangeListener(e -> {
+            if(validationEnabled) dialogValidate();
+        });
         HorizontalLayout fieldsLayout5c = UIUtilities.getHorizontalLayout(false,true,false);
         fieldsLayout5c.add(dialogRestSendToTablet,dialogRestSendToTookan);
 
@@ -841,7 +847,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 menuFieldsLayout);
 
         VerticalLayout otherFieldsLayout = UIUtilities.getVerticalLayout();
-        otherFieldsLayout.add(commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c);
+        otherFieldsLayout.add(commissionFieldsLayout,commissionPerFieldsLayout,fieldsLayout3,fieldsLayout4,fieldsLayout5a,fieldsLayout5b,fieldsLayout5c,dialogRestTagline);
         dialogTabEmail = new Tab(tabEmailIcon, new Span("Email"));
         dialogTabLocation = new Tab(tabLocationIcon, new Span("Location & Menu"));
         dialogTabOther = new Tab(tabOtherIcon, new Span("Other"));
@@ -940,6 +946,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         dialogRestAutoApproveOrders.setValue(selectedRestaurant.getAutoApproveOrders());
         dialogRestSendToTablet.setValue(selectedRestaurant.getSendToTablet());
         dialogRestSendToTookan.setValue(selectedRestaurant.getSendToTookan());
+        dialogRestTagline.setValue(selectedRestaurant.getTagline() == null ? "" : selectedRestaurant.getTagline());
         if(selectedRestaurant.getGlobalAuthCode()==null || selectedRestaurant.getGlobalAuthCode().isEmpty()){
             dialogRestGlobalAuthCode.setValue("");
         }else{
@@ -997,6 +1004,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
                 validateCheckbox(dialogRestAutoApproveOrders,selectedRestaurant.getAutoApproveOrders());
                 validateCheckbox(dialogRestSendToTablet,selectedRestaurant.getSendToTablet());
                 validateCheckbox(dialogRestSendToTookan,selectedRestaurant.getSendToTookan());
+                validateTextField(dialogRestTagline, selectedRestaurant.getTagline());
                 validateLongValue(dialogRestLogoImageAssetId, selectedRestaurant.getLogoImageAssetId());
                 validateTextField(dialogRestGlobalAuthCode, selectedRestaurant.getGlobalAuthCode());
                 validateTextField(dialogRestFetchMenuKey, selectedRestaurant.getFetchMenuKey());
@@ -1208,6 +1216,7 @@ public class RestView extends VerticalLayout implements LocationChoiceChangedLis
         selectedRestaurant.setAutoApproveOrders(dialogRestAutoApproveOrders.getValue());
         selectedRestaurant.setSendToTablet(dialogRestSendToTablet.getValue());
         selectedRestaurant.setSendToTookan(dialogRestSendToTookan.getValue());
+        selectedRestaurant.setTagline(dialogRestTagline.getValue());
         if(dialogRestGlobalAuthCode.getValue()==null){
             selectedRestaurant.setGlobalAuthCode("");
         }else{

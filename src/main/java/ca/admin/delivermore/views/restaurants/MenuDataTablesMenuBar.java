@@ -121,6 +121,10 @@ public class MenuDataTablesMenuBar extends MenuBar {
 
         dataTables.getSubMenu().addItem("Checkout Service Fee", event -> openCheckoutServiceFeeDialog());
 
+        dataTables.getSubMenu().addItem("Checkout Timeout", event -> openCheckoutTimeoutDialog());
+
+        dataTables.getSubMenu().addItem("Auto-Approve ETA Minutes", event -> openCheckoutAutoApproveMinutesDialog());
+
         dataTables.getSubMenu().addItem("Delivery Zones", event -> openDeliveryZonesDialog());
 
         dataTables.getSubMenu().addItem("Delivery Fee Info Text", event -> openCheckoutInfoTextDialog(
@@ -349,6 +353,80 @@ public class MenuDataTablesMenuBar extends MenuBar {
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
         content.add(helper, serviceFeePercent);
+        dialog.add(content);
+        dialog.getFooter().add(cancel, save);
+        dialog.open();
+    }
+
+    private void openCheckoutTimeoutDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Checkout Timeout");
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.COMPACT);
+
+        Span helper = new Span("This controls how long the customer and tablet countdown remain synchronized before the order is marked missed.");
+        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
+
+        NumberField timeoutMinutes = new NumberField("Timeout minutes");
+        timeoutMinutes.setMin(1d);
+        timeoutMinutes.setMax(240d);
+        timeoutMinutes.setStep(1d);
+        timeoutMinutes.setStepButtonsVisible(true);
+        timeoutMinutes.setWidthFull();
+        timeoutMinutes.setValue((double) restaurantMenuEditorService.getCheckoutTimeoutMinutes());
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button save = new Button("Save", event -> {
+            int minutes = timeoutMinutes.getValue() == null ? 10 : Math.max(1, timeoutMinutes.getValue().intValue());
+            restaurantMenuEditorService.saveCheckoutTimeoutMinutes(minutes);
+            onSettingsChanged.run();
+            showSuccess("Checkout timeout updated");
+            dialog.close();
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        content.add(helper, timeoutMinutes);
+        dialog.add(content);
+        dialog.getFooter().add(cancel, save);
+        dialog.open();
+    }
+
+    private void openCheckoutAutoApproveMinutesDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Auto-Approve ETA Minutes");
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.COMPACT);
+
+        Span helper = new Span("Used for customer feedback when a restaurant auto-approves an order. This value is shown as the estimated total time including prep and delivery.");
+        helper.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        helper.getStyle().set("font-size", "var(--lumo-font-size-s)");
+
+        NumberField minutesField = new NumberField("Minutes");
+        minutesField.setMin(1d);
+        minutesField.setMax(240d);
+        minutesField.setStep(1d);
+        minutesField.setStepButtonsVisible(true);
+        minutesField.setWidthFull();
+        minutesField.setValue((double) restaurantMenuEditorService.getCheckoutAutoApproveMinutes());
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button save = new Button("Save", event -> {
+            int minutes = minutesField.getValue() == null ? 45 : Math.max(1, minutesField.getValue().intValue());
+            restaurantMenuEditorService.saveCheckoutAutoApproveMinutes(minutes);
+            onSettingsChanged.run();
+            showSuccess("Auto-approve ETA minutes updated");
+            dialog.close();
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        content.add(helper, minutesField);
         dialog.add(content);
         dialog.getFooter().add(cancel, save);
         dialog.open();

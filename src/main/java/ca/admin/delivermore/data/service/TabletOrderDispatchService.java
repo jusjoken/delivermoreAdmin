@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.temporal.ChronoUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -188,8 +189,24 @@ public class TabletOrderDispatchService {
                         .putData("stagedOrderId", String.valueOf(stagedOrder.getId()))
                         .putData("restaurantId", String.valueOf(stagedOrder.getRestaurantId()))
                         .putData("restaurantName", String.valueOf(stagedOrder.getRestaurantName()))
+                        .putData("checkoutTimeoutMinutes", String.valueOf(defaultTimeoutMinutes(stagedOrder.getCheckoutTimeoutMinutes())))
+                        .putData("approvalDeadlineAt", String.valueOf(resolveApprovalDeadline(stagedOrder)))
                         .putData("assetTag", String.valueOf(tabletAsset.getAssetTag()))
                         .build();
+
+                if (stagedOrder.getDriveMinutesToCustomer() != null) {
+                    message = Message.builder()
+                        .setToken(tabletAsset.getFcmRegistrationToken())
+                        .putData("type", "dm_new_order")
+                        .putData("stagedOrderId", String.valueOf(stagedOrder.getId()))
+                        .putData("restaurantId", String.valueOf(stagedOrder.getRestaurantId()))
+                        .putData("restaurantName", String.valueOf(stagedOrder.getRestaurantName()))
+                        .putData("checkoutTimeoutMinutes", String.valueOf(defaultTimeoutMinutes(stagedOrder.getCheckoutTimeoutMinutes())))
+                        .putData("approvalDeadlineAt", String.valueOf(resolveApprovalDeadline(stagedOrder)))
+                    .putData("driveMinutesToCustomer", String.valueOf(stagedOrder.getDriveMinutesToCustomer()))
+                        .putData("assetTag", String.valueOf(tabletAsset.getAssetTag()))
+                        .build();
+                }
 
                 String messageId = firebaseMessaging.send(message);
                 dispatch.setPushSentAt(now);
@@ -252,13 +269,25 @@ public class TabletOrderDispatchService {
                     .putData("restaurantId", String.valueOf(stagedOrder.getRestaurantId()))
                     .putData("restaurantName", String.valueOf(stagedOrder.getRestaurantName()))
                     .putData("assetTag", String.valueOf(tabletAsset.getAssetTag()))
-                    .putData("approvalStatus", String.valueOf(stagedOrder.getApprovalStatus()));
+                    .putData("approvalStatus", String.valueOf(stagedOrder.getApprovalStatus()))
+                    .putData("approvalStatusLabel", displayApprovalStatus(stagedOrder.getApprovalStatus()));
+
+            if (stagedOrder.getDriveMinutesToCustomer() != null) {
+                messageBuilder.putData("driveMinutesToCustomer", String.valueOf(stagedOrder.getDriveMinutesToCustomer()));
+            }
+
+            if (stagedOrder.getRestaurantMinutesToCustomer() != null) {
+                messageBuilder.putData("restaurantMinutesToCustomer", String.valueOf(stagedOrder.getRestaurantMinutesToCustomer()));
+            }
 
             if (stagedOrder.getStatusReason() != null) {
                 messageBuilder.putData("statusReason", stagedOrder.getStatusReason());
             }
             if (stagedOrder.getStatusUpdatedAt() != null) {
                 messageBuilder.putData("statusUpdatedAt", stagedOrder.getStatusUpdatedAt().toString());
+            }
+            if (stagedOrder.getCheckoutTimeoutMinutes() != null) {
+                messageBuilder.putData("checkoutTimeoutMinutes", String.valueOf(stagedOrder.getCheckoutTimeoutMinutes()));
             }
 
             String messageId = firebaseMessaging.send(messageBuilder.build());
@@ -427,5 +456,32 @@ public class TabletOrderDispatchService {
                 .findFirst()
                 .map(Restaurant::getSendToTablet)
                 .orElse(false);
+    }
+
+    private int defaultTimeoutMinutes(Integer timeoutMinutes) {
+        return timeoutMinutes == null || timeoutMinutes < 1 ? 10 : timeoutMinutes;
+    }
+
+    private LocalDateTime resolveApprovalDeadline(StagedRestaurantOrder stagedOrder) {
+        LocalDateTime approvalRequestedAt = stagedOrder.getApprovalRequestedAt();
+        if (approvalRequestedAt == null) {
+            approvalRequestedAt = stagedOrder.getSubmittedAt();
+        }
+        return approvalRequestedAt == null
+                ? null
+                : approvalRequestedAt.plus(defaultTimeoutMinutes(stagedOrder.getCheckoutTimeoutMinutes()), ChronoUnit.MINUTES);
+    }
+
+    private String displayApprovalStatus(StagedRestaurantOrder.ApprovalStatus status) {
+        if (status == null) {
+            return "";
+        }
+        return switch (status) {
+            case APPROVED -> "Accepted";
+            case DECLINED -> "Rejected";
+            case CANCELED -> "Cancelled";
+            case MISSED -> "Missed";
+            case PENDING_APPROVAL -> "Pending";
+        };
     }
 }

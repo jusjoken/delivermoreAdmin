@@ -40,7 +40,8 @@ public class TabletOrderApiController {
     private static final Set<ApprovalStatus> COMPLETED_STATUSES = EnumSet.of(
             ApprovalStatus.APPROVED,
             ApprovalStatus.DECLINED,
-            ApprovalStatus.CANCELED);
+            ApprovalStatus.CANCELED,
+            ApprovalStatus.MISSED);
 
     private final TabletApiAccessService tabletApiAccessService;
     private final StagedRestaurantOrderRepository stagedRestaurantOrderRepository;
@@ -109,6 +110,11 @@ public class TabletOrderApiController {
                         order.getSubmittedAt(),
                         order.getTotal(),
                         order.getApprovalStatus(),
+                    order.getCheckoutTimeoutMinutes(),
+                    order.getDriveMinutesToCustomer(),
+                    order.getRestaurantMinutesToCustomer(),
+                    resolveApprovalDeadline(order),
+                    displayApprovalStatus(order.getApprovalStatus()),
                         order.getCustomerComments() != null && !order.getCustomerComments().isBlank()))
                 .toList();
     }
@@ -136,7 +142,8 @@ public class TabletOrderApiController {
                         order.getTotal(),
                         order.getApprovalStatus(),
                         order.getStatusReason(),
-                        order.getStatusUpdatedAt()))
+                    order.getStatusUpdatedAt(),
+                    displayApprovalStatus(order.getApprovalStatus())))
                 .toList();
     }
 
@@ -168,16 +175,45 @@ public class TabletOrderApiController {
         return new GenericResult("acknowledged", LocalDateTime.now());
     }
 
+    @PostMapping("/{stagedOrderId}/accept")
+    public DecisionResult acceptOrder(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @PathVariable Long stagedOrderId,
+            @RequestBody(required = false) DecisionRequest request) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
+        try {
+            Integer restaurantMinutesToCustomer = request == null ? null : request.restaurantMinutesToCustomer();
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.accept(stagedOrderId, restaurantMinutesToCustomer);
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt(), saved.getDriveMinutesToCustomer(), saved.getRestaurantMinutesToCustomer(), displayApprovalStatus(saved.getApprovalStatus()));
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
+    }
+
     @PostMapping("/{stagedOrderId}/approve")
     public DecisionResult approveOrder(
             @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
             @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
-            @PathVariable Long stagedOrderId) {
+            @PathVariable Long stagedOrderId,
+            @RequestBody(required = false) DecisionRequest request) {
+        return acceptOrder(assetTag, apiKey, stagedOrderId, request);
+    }
+
+    @PostMapping("/{stagedOrderId}/reject")
+    public DecisionResult rejectOrder(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @PathVariable Long stagedOrderId,
+            @RequestBody(required = false) DecisionRequest request) {
         TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
         getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
         try {
-            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.approve(stagedOrderId);
-            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.reject(
+                    stagedOrderId,
+                    request == null ? null : request.reason());
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt(), saved.getDriveMinutesToCustomer(), saved.getRestaurantMinutesToCustomer(), displayApprovalStatus(saved.getApprovalStatus()));
         } catch (IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
         }
@@ -189,16 +225,7 @@ public class TabletOrderApiController {
             @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
             @PathVariable Long stagedOrderId,
             @RequestBody(required = false) DecisionRequest request) {
-        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
-        getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
-        try {
-            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.decline(
-                    stagedOrderId,
-                    request == null ? null : request.reason());
-            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
-        } catch (IllegalStateException ex) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
-        }
+        return rejectOrder(assetTag, apiKey, stagedOrderId, request);
     }
 
     @PostMapping("/{stagedOrderId}/cancel")
@@ -213,7 +240,25 @@ public class TabletOrderApiController {
             StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.cancel(
                     stagedOrderId,
                     request == null ? null : request.reason());
-            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt());
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt(), saved.getDriveMinutesToCustomer(), saved.getRestaurantMinutesToCustomer(), displayApprovalStatus(saved.getApprovalStatus()));
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
+    }
+
+    @PostMapping("/{stagedOrderId}/missed")
+    public DecisionResult markMissed(
+            @RequestHeader(name = ASSET_TAG_HEADER, required = false) String assetTag,
+            @RequestHeader(name = API_KEY_HEADER, required = false) String apiKey,
+            @PathVariable Long stagedOrderId,
+            @RequestBody(required = false) DecisionRequest request) {
+        TabletAsset tabletAsset = authorizeTablet(assetTag, apiKey);
+        getAccessibleOrderOrThrow(tabletAsset, stagedOrderId);
+        try {
+            StagedRestaurantOrder saved = stagedRestaurantOrderWorkflowService.markMissed(
+                    stagedOrderId,
+                    request == null ? null : request.reason());
+            return new DecisionResult(saved.getId(), saved.getApprovalStatus(), saved.getStatusReason(), saved.getStatusUpdatedAt(), saved.getDriveMinutesToCustomer(), saved.getRestaurantMinutesToCustomer(), displayApprovalStatus(saved.getApprovalStatus()));
         } catch (IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
         }
@@ -270,6 +315,11 @@ public class TabletOrderApiController {
             LocalDateTime submittedAt,
             Double total,
             ApprovalStatus approvalStatus,
+            Integer checkoutTimeoutMinutes,
+            Integer driveMinutesToCustomer,
+            Integer restaurantMinutesToCustomer,
+            LocalDateTime approvalDeadlineAt,
+            String approvalStatusLabel,
             boolean hasCustomerComments) {
     }
 
@@ -282,10 +332,11 @@ public class TabletOrderApiController {
             Double total,
             ApprovalStatus approvalStatus,
             String statusReason,
-            LocalDateTime statusUpdatedAt) {
+                LocalDateTime statusUpdatedAt,
+                String approvalStatusLabel) {
     }
 
-    public record DecisionRequest(String reason) {
+    public record DecisionRequest(String reason, Integer restaurantMinutesToCustomer) {
     }
 
     public record TokenRegistrationRequest(String registrationToken) {
@@ -301,6 +352,31 @@ public class TabletOrderApiController {
             Long stagedOrderId,
             ApprovalStatus approvalStatus,
             String statusReason,
-            LocalDateTime statusUpdatedAt) {
+            LocalDateTime statusUpdatedAt,
+            Integer driveMinutesToCustomer,
+            Integer restaurantMinutesToCustomer,
+            String approvalStatusLabel) {
+    }
+
+    private LocalDateTime resolveApprovalDeadline(StagedRestaurantOrder order) {
+        LocalDateTime approvalRequestedAt = order.getApprovalRequestedAt();
+        if (approvalRequestedAt == null) {
+            approvalRequestedAt = order.getSubmittedAt();
+        }
+        int timeoutMinutes = order.getCheckoutTimeoutMinutes() == null ? 10 : Math.max(1, order.getCheckoutTimeoutMinutes());
+        return approvalRequestedAt == null ? null : approvalRequestedAt.plusMinutes(timeoutMinutes);
+    }
+
+    private String displayApprovalStatus(ApprovalStatus approvalStatus) {
+        if (approvalStatus == null) {
+            return "";
+        }
+        return switch (approvalStatus) {
+            case APPROVED -> "Accepted";
+            case DECLINED -> "Rejected";
+            case CANCELED -> "Cancelled";
+            case MISSED -> "Missed";
+            case PENDING_APPROVAL -> "Pending";
+        };
     }
 }
