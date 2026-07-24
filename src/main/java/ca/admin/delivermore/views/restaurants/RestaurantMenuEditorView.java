@@ -36,12 +36,15 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
+import com.vaadin.flow.component.menubar.MenuBarVariant;
+import com.vaadin.flow.component.contextmenu.MenuItem;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import com.vaadin.flow.component.splitlayout.SplitLayout;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -116,6 +119,18 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             "Sugar (g)",
             "Salt (g)");
 
+    private enum ChoiceLibraryMode {
+        ALL,
+        ASSIGNED,
+        UNASSIGNED
+    }
+
+    private record ActionMenuEntry(VaadinIcon icon, String label, Runnable action, boolean destructive) {
+    }
+
+    private record TreeStatusBadge(String label, String colorToken) {
+    }
+
     private final RestaurantMenuEditorService restaurantMenuEditorService;
     private final MenuImageAssetService menuImageAssetService;
 
@@ -134,7 +149,10 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
     private final TreeGrid<MenuTreeNode> editorTree = new TreeGrid<>();
     
     // Right pane: Choice library
+    private final VerticalLayout choiceLibraryPane = new VerticalLayout();
+    private final RadioButtonGroup<ChoiceLibraryMode> choiceLibraryModeSelector = new RadioButtonGroup<>();
     private final Accordion choiceLibrary = new Accordion();
+    private ChoiceLibraryMode choiceLibraryMode = ChoiceLibraryMode.ALL;
     
     // Data tracking
     private Long restaurantId;
@@ -209,7 +227,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         configureChoiceLibrary();
         configureActions();
 
-        SplitLayout splitLayout = new SplitLayout(editorTree, choiceLibrary);
+        SplitLayout splitLayout = new SplitLayout(editorTree, choiceLibraryPane);
         splitLayout.setSizeFull();
         splitLayout.setSplitterPosition(60); // 60% left, 40% right
 
@@ -515,8 +533,9 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         Grid.Column<MenuTreeNode> nameCol = editorTree.addComponentHierarchyColumn(this::buildNameCell)
             .setHeader(nameHeader)
+            .setWidth("380px")
             .setResizable(true)
-            .setFlexGrow(1);
+            .setFlexGrow(2);
 
         // Drag handle column — indent by hierarchy level for consistent visual nesting.
         Grid.Column<MenuTreeNode> handleCol = editorTree.addComponentColumn(node -> {
@@ -532,19 +551,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             return handle;
         }).setWidth("72px").setFlexGrow(0).setResizable(false);
 
-        // Display order column
-        Grid.Column<MenuTreeNode> orderCol = editorTree.addColumn(node -> {
-                    return switch (node.type()) {
-                        case CATEGORY_TYPE -> ((RestaurantMenuCategory) node.data()).getDisplayOrder();
-                        case ITEM_TYPE -> ((RestaurantMenuItem) node.data()).getDisplayOrder();
-                        case ITEM_SIZE_TYPE -> ((RestaurantMenuItemSize) node.data()).getDisplayOrder();
-                        default -> null;
-                    };
-                })
-                .setHeader("Order")
-                .setWidth("80px")
-                .setFlexGrow(0);
-
         // Price column (items only) — formatted with explicit width
         Grid.Column<MenuTreeNode> priceCol = editorTree.addColumn(node -> {
                     if (ITEM_TYPE.equals(node.type())) {
@@ -558,12 +564,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 })
                 .setHeader("Price")
                 .setWidth("90px")
-                .setFlexGrow(0);
-
-        // Options column — shows compact status badges like Hidden, NoStock, and PreSelected.
-        Grid.Column<MenuTreeNode> optionsCol = editorTree.addComponentColumn(this::buildOptionsBadges)
-                .setHeader("Options")
-                .setWidth("180px")
                 .setFlexGrow(0);
 
             Grid.Column<MenuTreeNode> rowActionsCol = editorTree.addComponentColumn(this::buildRowActions)
@@ -648,7 +648,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         // Put handle column first visually
         @SuppressWarnings("unchecked")
         Grid.Column<MenuTreeNode>[] columnOrder = (Grid.Column<MenuTreeNode>[]) new Grid.Column[] {
-            handleCol, nameCol, orderCol, priceCol, optionsCol, rowActionsCol, choicesCol
+            handleCol, nameCol, priceCol, rowActionsCol, choicesCol
         };
         editorTree.setColumnOrder(columnOrder);
 
@@ -672,11 +672,59 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 expandedItemIds.remove(((RestaurantMenuItem) node.data()).getId());
             }
         }));
+        editorTree.asSingleSelect().addValueChangeListener(event -> {
+            if (choiceLibraryMode != ChoiceLibraryMode.ALL) {
+                refreshChoiceLibrary();
+            }
+        });
     }
 
     private void configureChoiceLibrary() {
-        choiceLibrary.setSizeFull();
+        choiceLibraryPane.setSizeFull();
+        choiceLibraryPane.setPadding(false);
+        choiceLibraryPane.setSpacing(false);
+        choiceLibraryPane.getStyle().set("gap", "8px");
+
+        choiceLibraryModeSelector.setLabel("Mode");
+        choiceLibraryModeSelector.setItems(ChoiceLibraryMode.ALL, ChoiceLibraryMode.ASSIGNED, ChoiceLibraryMode.UNASSIGNED);
+        choiceLibraryModeSelector.setItemLabelGenerator(mode -> switch (mode) {
+            case ALL -> "All";
+            case ASSIGNED -> "Assigned";
+            case UNASSIGNED -> "Unassigned";
+        });
+        choiceLibraryModeSelector.setValue(choiceLibraryMode);
+        choiceLibraryModeSelector.addValueChangeListener(event -> {
+            ChoiceLibraryMode selectedMode = event.getValue() == null ? ChoiceLibraryMode.ALL : event.getValue();
+            if (selectedMode == choiceLibraryMode) {
+                return;
+            }
+            choiceLibraryMode = selectedMode;
+            refreshChoiceLibrary();
+        });
+
+        choiceLibraryModeSelector.getStyle().set("padding", "0");
+
+        HorizontalLayout choiceLibraryModeRow = new HorizontalLayout();
+        choiceLibraryModeRow.setWidthFull();
+        choiceLibraryModeRow.setPadding(false);
+        choiceLibraryModeRow.setSpacing(false);
+        choiceLibraryModeRow.setAlignItems(FlexComponent.Alignment.CENTER);
+        choiceLibraryModeRow.getStyle().set("gap", "8px");
+
+        choiceLibraryModeSelector.setWidthFull();
+
+        Button addChoiceGroupButton = new Button("+ Add group", event -> addChoiceGroupAtEnd());
+        addChoiceGroupButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        addChoiceGroupButton.getStyle().set("white-space", "nowrap");
+
+        choiceLibraryModeRow.add(choiceLibraryModeSelector, addChoiceGroupButton);
+        choiceLibraryModeRow.setFlexGrow(1, choiceLibraryModeSelector);
+
+        choiceLibrary.setWidthFull();
+        choiceLibrary.setHeightFull();
         choiceLibrary.getStyle().set("overflow-y", "auto");
+        choiceLibraryPane.add(choiceLibraryModeRow, choiceLibrary);
+        choiceLibraryPane.setFlexGrow(1, choiceLibrary);
         // Content is populated in refreshChoiceLibrary() after data loads
     }
 
@@ -703,6 +751,12 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         // Build library order from the same category/item traversal as the editor tree,
         // then add any remaining groups not currently linked in that traversal.
         List<RestaurantMenuOptionGroup> orderedLibraryGroups = buildChoiceLibraryGroupsInDisplayOrder(allGroups);
+        orderedLibraryGroups = filterChoiceLibraryGroupsForMode(orderedLibraryGroups);
+        if (orderedLibraryGroups.isEmpty()) {
+            AccordionPanel placeholder = choiceLibrary.add("No choice groups found", new Span(resolveChoiceLibraryEmptyMessage()));
+            placeholder.setEnabled(false);
+            return;
+        }
 
         // Keep one library row per source group family (or name/settings for local-only groups).
         // For clone families, pick the representative with the most options, then lowest id.
@@ -732,6 +786,100 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         displayGroups.sort(groupOrderComparator);
 
         renderChoiceLibraryPanels(displayGroups, choiceGroupFamiliesByRepresentativeId);
+    }
+
+    private List<RestaurantMenuOptionGroup> filterChoiceLibraryGroupsForMode(List<RestaurantMenuOptionGroup> groups) {
+        if (groups == null || groups.isEmpty() || choiceLibraryMode == ChoiceLibraryMode.ALL) {
+            return groups == null ? List.of() : groups;
+        }
+
+        if (choiceLibraryMode == ChoiceLibraryMode.ASSIGNED) {
+            Set<Long> assignedIdsForSelection = getAssignedChoiceGroupIdsForSelection();
+            if (assignedIdsForSelection.isEmpty()) {
+                return List.of();
+            }
+            return groups.stream()
+                    .filter(group -> group != null && group.getId() != null && assignedIdsForSelection.contains(group.getId()))
+                    .toList();
+        }
+
+        Set<Long> assignedIds = getAssignedChoiceGroupIdsAcrossMenu();
+        return groups.stream()
+                .filter(group -> group != null && group.getId() != null && !assignedIds.contains(group.getId()))
+                .toList();
+    }
+
+    private Set<Long> getAssignedChoiceGroupIdsForSelection() {
+        MenuTreeNode selectedNode = editorTree.asSingleSelect().getValue();
+        if (selectedNode == null) {
+            return Set.of();
+        }
+
+        if (CATEGORY_TYPE.equals(selectedNode.type())) {
+            RestaurantMenuCategory category = (RestaurantMenuCategory) selectedNode.data();
+            Set<Long> assignedIds = new HashSet<>(collectChoiceGroupIds(categoryOptionGroupsMap.get(category.getId())));
+            List<RestaurantMenuItem> categoryItems = categoryItemsMap.getOrDefault(category, List.of());
+            for (RestaurantMenuItem item : categoryItems) {
+                if (item == null || item.getId() == null) {
+                    continue;
+                }
+                assignedIds.addAll(collectChoiceGroupIds(itemOptionGroupsMap.get(item.getId())));
+            }
+            return assignedIds;
+        }
+
+        if (ITEM_TYPE.equals(selectedNode.type())) {
+            RestaurantMenuItem item = (RestaurantMenuItem) selectedNode.data();
+            return collectChoiceGroupIds(itemOptionGroupsMap.get(item.getId()));
+        }
+
+        if (ITEM_SIZE_TYPE.equals(selectedNode.type())) {
+            RestaurantMenuItemSize size = (RestaurantMenuItemSize) selectedNode.data();
+            RestaurantMenuItem parentItem = findParentItemForSize(size.getId());
+            if (parentItem != null) {
+                return collectChoiceGroupIds(itemOptionGroupsMap.get(parentItem.getId()));
+            }
+        }
+
+        return Set.of();
+    }
+
+    private Set<Long> getAssignedChoiceGroupIdsAcrossMenu() {
+        Set<Long> assignedIds = new HashSet<>();
+        for (List<RestaurantMenuOptionGroup> groups : categoryOptionGroupsMap.values()) {
+            assignedIds.addAll(collectChoiceGroupIds(groups));
+        }
+        for (List<RestaurantMenuOptionGroup> groups : itemOptionGroupsMap.values()) {
+            assignedIds.addAll(collectChoiceGroupIds(groups));
+        }
+        return assignedIds;
+    }
+
+    private Set<Long> collectChoiceGroupIds(List<RestaurantMenuOptionGroup> groups) {
+        if (groups == null || groups.isEmpty()) {
+            return Set.of();
+        }
+        Set<Long> ids = new HashSet<>();
+        for (RestaurantMenuOptionGroup group : groups) {
+            if (group != null && group.getId() != null) {
+                ids.add(group.getId());
+            }
+        }
+        return ids;
+    }
+
+    private String resolveChoiceLibraryEmptyMessage() {
+        return switch (choiceLibraryMode) {
+            case ASSIGNED -> {
+                MenuTreeNode selectedNode = editorTree.asSingleSelect().getValue();
+                if (selectedNode == null) {
+                    yield "Select a menu group or item on the left to see assigned choice groups";
+                }
+                yield "No choice groups are assigned to the current selection";
+            }
+            case UNASSIGNED -> "All choice groups are currently assigned";
+            case ALL -> "This menu has no option groups defined";
+        };
     }
 
     private void renderChoiceLibraryPanels(
@@ -851,31 +999,31 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 optionBadges.getStyle().set("width", "140px");
                 optRow.add(optionBadges);
 
-                Button editOption = iconButton(VaadinIcon.PENCIL, "Edit choice", event -> openChoiceDialog(group, option));
-                Button duplicateOption = iconButton(VaadinIcon.COPY_O, "Duplicate choice", event -> confirmAction(
-                        "Duplicate choice",
-                        "Create a copy of choice '" + option.getName() + "'?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.duplicateOption(currentMenuVersion.getId(), option.getId());
-                            showSuccess("Choice duplicated");
-                            refreshEditorData();
-                        }));
-                Button removeOption = iconButton(VaadinIcon.TRASH, "Remove choice", event -> confirmAction(
-                        "Remove choice",
-                        "Delete choice '" + option.getName() + "' from group '" + group.getName() + "'?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.removeOption(currentMenuVersion.getId(), option.getId());
-                            showSuccess("Choice removed");
-                            refreshEditorData();
-                        }));
-                removeOption.getElement().setAttribute("theme", "error tertiary-inline icon small");
-                optRow.add(editOption, duplicateOption, removeOption);
+                MenuBar optionActions = buildActionsMenu(List.of(
+                        new ActionMenuEntry(VaadinIcon.PENCIL, "Edit choice", () -> openChoiceDialog(group, option), false),
+                        new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate choice", () -> confirmAction(
+                                "Duplicate choice",
+                                "Create a copy of choice '" + option.getName() + "'?",
+                                () -> {
+                                    if (currentMenuVersion == null) {
+                                        return;
+                                    }
+                                    restaurantMenuEditorService.duplicateOption(currentMenuVersion.getId(), option.getId());
+                                    showSuccess("Choice duplicated");
+                                    refreshEditorData();
+                                }), false),
+                        new ActionMenuEntry(VaadinIcon.TRASH, "Remove choice", () -> confirmAction(
+                                "Remove choice",
+                                "Delete choice '" + option.getName() + "' from group '" + group.getName() + "'?",
+                                () -> {
+                                    if (currentMenuVersion == null) {
+                                        return;
+                                    }
+                                    restaurantMenuEditorService.removeOption(currentMenuVersion.getId(), option.getId());
+                                    showSuccess("Choice removed");
+                                    refreshEditorData();
+                                }), true)));
+                optRow.add(optionActions);
 
                 attachChoiceOptionReorderBehavior(optRow, rowDragHandle, group, option);
                 addDropIndicator(optRow, "option");
@@ -883,10 +1031,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             }
         }
 
-        Button addChoiceButton = new Button("Add choice", event -> openChoiceDialog(group, null));
-        addChoiceButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
-        addChoiceButton.getStyle().set("align-self", "flex-start");
-        content.add(addChoiceButton);
+        // Add-choice action is surfaced in the group header for consistency with the left-side lists.
     }
 
     private HorizontalLayout buildChoiceGroupSummary(RestaurantMenuOptionGroup group, List<RestaurantMenuOptionGroup> groupFamily) {
@@ -945,38 +1090,33 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         actions.getStyle().set("gap", "0");
         actions.getStyle().set("flex-shrink", "0");
 
-        Button duplicate = iconButton(VaadinIcon.COPY_O, "Duplicate choice group", event -> confirmAction(
-                "Duplicate choice group",
-                "Create a copy of choice group '" + group.getName() + "'?",
-                () -> {
-                    if (currentMenuVersion == null) {
-                        return;
-                    }
-                    restaurantMenuEditorService.duplicateOptionGroup(currentMenuVersion.getId(), group.getId());
-                    showSuccess("Choice group duplicated");
-                    refreshEditorData();
-                }));
-        Button remove = iconButton(VaadinIcon.TRASH, "Remove choice group", event -> confirmAction(
-                "Remove choice group",
-                "Delete choice group '" + group.getName() + "' and all choices in it?",
-                () -> {
-                    if (currentMenuVersion == null) {
-                        return;
-                    }
-                    restaurantMenuEditorService.removeOptionGroup(currentMenuVersion.getId(), group.getId());
-                    showSuccess("Choice group removed");
-                    refreshEditorData();
-                }));
-        remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
-        Button more = iconButton(VaadinIcon.ELLIPSIS_DOTS_V, "More actions", event -> openChoiceGroupMoreDialog(group));
-        Button edit = iconButton(VaadinIcon.PENCIL, "Edit choice group", event -> openChoiceGroupEditDialog(group));
-
-        preventAccordionToggle(duplicate);
-        preventAccordionToggle(remove);
-        preventAccordionToggle(more);
-        preventAccordionToggle(edit);
-
-        actions.add(edit, duplicate, remove, more);
+        MenuBar groupActions = buildActionsMenu(List.of(
+                new ActionMenuEntry(VaadinIcon.PLUS, "Add choice", () -> openChoiceDialog(group, null), false),
+                new ActionMenuEntry(VaadinIcon.PENCIL, "Edit choice group", () -> openChoiceGroupEditDialog(group), false),
+                new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate choice group", () -> confirmAction(
+                        "Duplicate choice group",
+                        "Create a copy of choice group '" + group.getName() + "'?",
+                        () -> {
+                            if (currentMenuVersion == null) {
+                                return;
+                            }
+                            restaurantMenuEditorService.duplicateOptionGroup(currentMenuVersion.getId(), group.getId());
+                            showSuccess("Choice group duplicated");
+                            refreshEditorData();
+                        }), false),
+                new ActionMenuEntry(VaadinIcon.TRASH, "Remove choice group", () -> confirmAction(
+                        "Remove choice group",
+                        "Delete choice group '" + group.getName() + "' and all choices in it?",
+                        () -> {
+                            if (currentMenuVersion == null) {
+                                return;
+                            }
+                            restaurantMenuEditorService.removeOptionGroup(currentMenuVersion.getId(), group.getId());
+                            showSuccess("Choice group removed");
+                            refreshEditorData();
+                        }), true)));
+        preventAccordionToggle(groupActions);
+        actions.add(groupActions);
 
         if (group.getId() != null) {
             DragSource<Icon> dragSource = DragSource.create(dragHandle);
@@ -1111,8 +1251,8 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         return trimmedLabel.substring(0, maxLength - 1).trim() + "…";
     }
 
-    private void preventAccordionToggle(Button button) {
-        button.getElement().executeJs(
+    private void preventAccordionToggle(com.vaadin.flow.component.Component component) {
+        component.getElement().executeJs(
                 "this.addEventListener('click', function(e){ e.stopPropagation(); });"
                         + "this.addEventListener('mousedown', function(e){ e.stopPropagation(); });"
                         + "this.addEventListener('keydown', function(e){ e.stopPropagation(); });");
@@ -1423,6 +1563,11 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             textWrap.add(subtitle);
         }
 
+        FlexLayout statusBadgeRow = buildTreeStatusBadgeRow(node);
+        if (statusBadgeRow.getComponentCount() > 0) {
+            textWrap.add(statusBadgeRow);
+        }
+
         cell.add(textWrap);
 
         return cell;
@@ -1507,16 +1652,26 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         }
     }
 
-    private FlexLayout buildOptionsBadges(MenuTreeNode node) {
+    private FlexLayout buildTreeStatusBadgeRow(MenuTreeNode node) {
         FlexLayout badges = new FlexLayout();
         badges.getStyle().set("display", "inline-flex");
         badges.getStyle().set("flex-wrap", "wrap");
         badges.getStyle().set("gap", "4px");
 
+        for (TreeStatusBadge badge : collectTreeStatusBadges(node)) {
+            badges.add(createTreeStatusBadge(badge));
+        }
+
+        return badges;
+    }
+
+    private List<TreeStatusBadge> collectTreeStatusBadges(MenuTreeNode node) {
+        List<TreeStatusBadge> badges = new ArrayList<>();
+
         if (CATEGORY_TYPE.equals(node.type())) {
             RestaurantMenuCategory category = (RestaurantMenuCategory) node.data();
             if (Boolean.FALSE.equals(category.getActive())) {
-                badges.add(createOptionBadge("Hidden", "contrast"));
+                badges.add(new TreeStatusBadge("Hidden", "var(--lumo-contrast-70pct)"));
             }
             return badges;
         }
@@ -1524,10 +1679,10 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         if (ITEM_TYPE.equals(node.type())) {
             RestaurantMenuItem item = (RestaurantMenuItem) node.data();
             if (Boolean.FALSE.equals(item.getActive())) {
-                badges.add(createOptionBadge("Hidden", "contrast"));
+                badges.add(new TreeStatusBadge("Hidden", "var(--lumo-contrast-70pct)"));
             }
             if (Boolean.TRUE.equals(item.getOutOfStock())) {
-                badges.add(createOptionBadge("NoStock", "error"));
+                badges.add(new TreeStatusBadge("NoStock", "var(--lumo-error-text-color)"));
             }
             return badges;
         }
@@ -1535,11 +1690,26 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         if (ITEM_SIZE_TYPE.equals(node.type())) {
             RestaurantMenuItemSize size = (RestaurantMenuItemSize) node.data();
             if (Boolean.TRUE.equals(size.getDefaultSize())) {
-                badges.add(createOptionBadge("PreSelected", "success"));
+                badges.add(new TreeStatusBadge("PreSelected", "var(--lumo-success-text-color)"));
             }
         }
 
         return badges;
+    }
+
+    private Span createTreeStatusBadge(TreeStatusBadge badgeDef) {
+        Span badge = new Span(badgeDef.label());
+        String colorToken = badgeDef.colorToken();
+        badge.getStyle().set("display", "inline-flex");
+        badge.getStyle().set("align-items", "center");
+        badge.getStyle().set("border-radius", "999px");
+        badge.getStyle().set("padding", "1px 7px");
+        badge.getStyle().set("font-size", "var(--lumo-font-size-xxs)");
+        badge.getStyle().set("line-height", "1.2");
+        badge.getStyle().set("border", "1px solid color-mix(in srgb, " + colorToken + " 35%, transparent)");
+        badge.getStyle().set("background", "color-mix(in srgb, " + colorToken + " 12%, transparent)");
+        badge.getStyle().set("color", "color-mix(in srgb, " + colorToken + " 82%, black)");
+        return badge;
     }
 
     private Span createOptionBadge(String label, String variant) {
@@ -1559,73 +1729,61 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         if (CATEGORY_TYPE.equals(node.type())) {
             RestaurantMenuCategory category = (RestaurantMenuCategory) node.data();
-            Button addItem = iconButton(VaadinIcon.PLUS, "Add item in group", event ->
-                addItemToCategory(category));
-            Button edit = iconButton(VaadinIcon.PENCIL, "Edit category", event -> openEditDialog(node));
-            Button duplicate = iconButton(VaadinIcon.COPY_O, "Duplicate category", event -> {
-                confirmAction(
-                        "Duplicate category",
-                        "Create a copy of category '" + category.getName() + "'?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.duplicateCategory(currentMenuVersion.getId(), category.getId());
-                            showSuccess("Category duplicated");
-                            refreshEditorData();
-                        });
-            });
-            Button remove = iconButton(VaadinIcon.TRASH, "Remove category", event -> {
-                confirmAction(
-                        "Remove category",
-                        "Delete category '" + category.getName() + "' and all items/choices under it?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.removeCategory(currentMenuVersion.getId(), category.getId());
-                            showSuccess("Category removed");
-                            refreshEditorData();
-                        });
-            });
-            remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
-            actions.add(addItem, edit, duplicate, remove);
+            actions.add(buildActionsMenu(List.of(
+                    new ActionMenuEntry(VaadinIcon.PLUS, "Add item in group", () -> addItemToCategory(category), false),
+                    new ActionMenuEntry(VaadinIcon.PENCIL, "Edit category", () -> openEditDialog(node), false),
+                    new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate category", () -> confirmAction(
+                            "Duplicate category",
+                            "Create a copy of category '" + category.getName() + "'?",
+                            () -> {
+                                if (currentMenuVersion == null) {
+                                    return;
+                                }
+                                restaurantMenuEditorService.duplicateCategory(currentMenuVersion.getId(), category.getId());
+                                showSuccess("Category duplicated");
+                                refreshEditorData();
+                            }), false),
+                    new ActionMenuEntry(VaadinIcon.TRASH, "Remove category", () -> confirmAction(
+                            "Remove category",
+                            "Delete category '" + category.getName() + "' and all items/choices under it?",
+                            () -> {
+                                if (currentMenuVersion == null) {
+                                    return;
+                                }
+                                restaurantMenuEditorService.removeCategory(currentMenuVersion.getId(), category.getId());
+                                showSuccess("Category removed");
+                                refreshEditorData();
+                            }), true))));
             return actions;
         }
 
         if (ITEM_TYPE.equals(node.type())) {
             RestaurantMenuItem item = (RestaurantMenuItem) node.data();
-            Button addSize = iconButton(VaadinIcon.PLUS, "Add size", event ->
-                addSizeToItem(item));
-            Button edit = iconButton(VaadinIcon.PENCIL, "Edit item", event -> openEditDialog(node));
-            Button duplicate = iconButton(VaadinIcon.COPY_O, "Duplicate item", event -> {
-                confirmAction(
-                        "Duplicate item",
-                        "Create a copy of item '" + item.getName() + "'?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.duplicateItem(currentMenuVersion.getId(), item.getId());
-                            showSuccess("Item duplicated");
-                            refreshEditorData();
-                        });
-            });
-            Button remove = iconButton(VaadinIcon.TRASH, "Remove item", event -> {
-                confirmAction(
-                        "Remove item",
-                        "Delete item '" + item.getName() + "' and its choices?",
-                        () -> {
-                            if (currentMenuVersion == null) {
-                                return;
-                            }
-                            restaurantMenuEditorService.removeItem(currentMenuVersion.getId(), item.getId());
-                            showSuccess("Item removed");
-                            refreshEditorData();
-                        });
-            });
-            remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
-            actions.add(addSize, edit, duplicate, remove);
+            actions.add(buildActionsMenu(List.of(
+                    new ActionMenuEntry(VaadinIcon.PLUS, "Add size", () -> addSizeToItem(item), false),
+                    new ActionMenuEntry(VaadinIcon.PENCIL, "Edit item", () -> openEditDialog(node), false),
+                    new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate item", () -> confirmAction(
+                            "Duplicate item",
+                            "Create a copy of item '" + item.getName() + "'?",
+                            () -> {
+                                if (currentMenuVersion == null) {
+                                    return;
+                                }
+                                restaurantMenuEditorService.duplicateItem(currentMenuVersion.getId(), item.getId());
+                                showSuccess("Item duplicated");
+                                refreshEditorData();
+                            }), false),
+                    new ActionMenuEntry(VaadinIcon.TRASH, "Remove item", () -> confirmAction(
+                            "Remove item",
+                            "Delete item '" + item.getName() + "' and its choices?",
+                            () -> {
+                                if (currentMenuVersion == null) {
+                                    return;
+                                }
+                                restaurantMenuEditorService.removeItem(currentMenuVersion.getId(), item.getId());
+                                showSuccess("Item removed");
+                                refreshEditorData();
+                            }), true))));
             return actions;
         }
 
@@ -1636,10 +1794,10 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 return actions;
             }
 
-            Button edit = iconButton(VaadinIcon.PENCIL, "Edit size",
-                    event -> openItemSizeDialog(parentItem, size, this::refreshEditorData));
-            Button remove = iconButton(VaadinIcon.TRASH, "Remove size", event ->
-                    confirmAction(
+            actions.add(buildActionsMenu(List.of(
+                    new ActionMenuEntry(VaadinIcon.PENCIL, "Edit size",
+                            () -> openItemSizeDialog(parentItem, size, this::refreshEditorData), false),
+                    new ActionMenuEntry(VaadinIcon.TRASH, "Remove size", () -> confirmAction(
                             "Remove size",
                             "Delete size '" + (size.getName() == null ? "" : size.getName()) + "'?",
                             () -> {
@@ -1649,11 +1807,41 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                                 restaurantMenuEditorService.removeItemSize(currentMenuVersion.getId(), parentItem.getId(), size.getId());
                                 showSuccess("Size removed");
                                 refreshEditorData();
-                            }));
-            remove.getElement().setAttribute("theme", "error tertiary-inline icon small");
-            actions.add(edit, remove);
+                            }), true))));
         }
         return actions;
+    }
+
+    private MenuBar buildActionsMenu(List<ActionMenuEntry> entries) {
+        MenuBar actionsMenu = new MenuBar();
+        actionsMenu.addThemeVariants(MenuBarVariant.LUMO_TERTIARY_INLINE, MenuBarVariant.LUMO_SMALL);
+
+        MenuItem root = actionsMenu.addItem(VaadinIcon.ELLIPSIS_DOTS_V.create());
+        root.getElement().setAttribute("aria-label", "Actions");
+        root.getElement().setAttribute("title", "Actions");
+
+        for (ActionMenuEntry entry : entries) {
+            Icon icon = entry.icon().create();
+            if (entry.destructive()) {
+                icon.getStyle().set("color", "var(--lumo-error-text-color)");
+            }
+            icon.setSize("14px");
+
+            Span label = new Span(entry.label());
+            if (entry.destructive()) {
+                label.getStyle().set("color", "var(--lumo-error-text-color)");
+            }
+
+            HorizontalLayout itemContent = new HorizontalLayout(icon, label);
+            itemContent.setPadding(false);
+            itemContent.setSpacing(false);
+            itemContent.setAlignItems(FlexComponent.Alignment.CENTER);
+            itemContent.getStyle().set("gap", "8px");
+
+            root.getSubMenu().addItem(itemContent, event -> entry.action().run());
+        }
+
+        return actionsMenu;
     }
 
     private Button iconButton(VaadinIcon icon, String ariaLabel,
@@ -1870,6 +2058,33 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         category.setDisplayOrder(nextOrder);
         restaurantMenuEditorService.saveCategory(category);
         refreshEditorData();
+    }
+
+    private void addChoiceGroupAtEnd() {
+        if (currentMenuVersion == null) {
+            return;
+        }
+
+        List<RestaurantMenuOptionGroup> allGroups = restaurantMenuEditorService
+                .listOptionGroupsForVersion(currentMenuVersion.getId());
+        int nextDisplayOrder = allGroups.stream()
+                .map(RestaurantMenuOptionGroup::getDisplayOrder)
+                .filter(order -> order != null)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0) + 1;
+
+        RestaurantMenuOptionGroup group = new RestaurantMenuOptionGroup();
+        group.setMenuVersionId(currentMenuVersion.getId());
+        group.setSourceMenuId(currentMenuVersion.getSourceMenuId());
+        group.setName("New Choice Group");
+        group.setRequiredSelection(Boolean.FALSE);
+        group.setAllowQuantity(Boolean.FALSE);
+        group.setForceMin(0);
+        group.setForceMax(0);
+        group.setDisplayOrder(nextDisplayOrder);
+
+        openChoiceGroupEditDialog(group);
     }
 
     private void addItemToCategory(RestaurantMenuCategory category) {
@@ -2438,95 +2653,12 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         return draggedIndex < targetIndex ? GridDropLocation.BELOW : GridDropLocation.ABOVE;
     }
 
-    private void openChoiceGroupMoreDialog(RestaurantMenuOptionGroup group) {
-        Dialog dialog = new Dialog();
-        dialog.setHeaderTitle(group.getName());
-
-        VerticalLayout content = new VerticalLayout();
-        content.setPadding(false);
-        content.setSpacing(true);
-        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.COMPACT);
-
-        Button duplicate = new Button("Duplicate", VaadinIcon.COPY_O.create(), event -> {
-            if (currentMenuVersion == null) {
-                return;
-            }
-            try {
-                restaurantMenuEditorService.duplicateOptionGroup(currentMenuVersion.getId(), group.getId());
-                dialog.close();
-                showSuccess("Choice group duplicated");
-                refreshEditorData();
-            } catch (IllegalStateException ex) {
-                showError(ex.getMessage());
-            }
-        });
-        duplicate.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
-
-        Button remove = new Button("Remove", VaadinIcon.TRASH.create(), event -> {
-            dialog.close();
-            confirmAction(
-                    "Remove choice group",
-                    "Delete choice group '" + group.getName() + "' and all choices in it?",
-                    () -> {
-                        if (currentMenuVersion == null) {
-                            return;
-                        }
-                        restaurantMenuEditorService.removeOptionGroup(currentMenuVersion.getId(), group.getId());
-                        showSuccess("Choice group removed");
-                        refreshEditorData();
-                    });
-        });
-        remove.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY_INLINE);
-
-        ComboBox<String> majorGroup = new ComboBox<>("Major group");
-        majorGroup.setWidthFull();
-        majorGroup.setItems(majorGroupOptions);
-        majorGroup.setClearButtonVisible(true);
-        String selectedMajorGroup = trimToNull(restaurantMenuEditorService.getOptionGroupMajorGroup(group.getId()));
-        if (selectedMajorGroup != null && !majorGroupOptions.contains(selectedMajorGroup)) {
-            majorGroup.setItems(Stream.concat(majorGroupOptions.stream(), Stream.of(selectedMajorGroup)).toList());
-        }
-        if (selectedMajorGroup != null) {
-            majorGroup.setValue(selectedMajorGroup);
-        }
-
-        ComboBox<String> taxationCategory = new ComboBox<>("Taxation Categories");
-        taxationCategory.setWidthFull();
-        taxationCategory.setItems(taxationCategoryOptions);
-        taxationCategory.setClearButtonVisible(true);
-        taxationCategory.setHelperText("You can add other tax rates under Data Tables / Taxation Categories List");
-        String selectedTaxationCategory = trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
-        if (selectedTaxationCategory != null && !taxationCategoryOptions.contains(selectedTaxationCategory)) {
-            taxationCategory.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(selectedTaxationCategory)).toList());
-        }
-        if (selectedTaxationCategory != null) {
-            taxationCategory.setValue(selectedTaxationCategory);
-        }
-
-        content.add(duplicate, remove, majorGroup, taxationCategory);
-
-        Button cancel = new Button("Cancel", event -> dialog.close());
-        Button save = new Button("Save", event -> {
-            try {
-                restaurantMenuEditorService.saveOptionGroupMajorGroup(group.getId(), majorGroup.getValue());
-                restaurantMenuEditorService.saveOptionGroupTaxationCategory(group.getId(), taxationCategory.getValue());
-                dialog.close();
-                showSuccess("Choice group details updated");
-                refreshEditorData();
-            } catch (IllegalStateException ex) {
-                showError(ex.getMessage());
-            }
-        });
-        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
-        dialog.add(content);
-        dialog.getFooter().add(cancel, save);
-        dialog.open();
-    }
-
     private void openChoiceGroupEditDialog(RestaurantMenuOptionGroup group) {
+        boolean creatingNewGroup = group.getId() == null;
+        final String defaultChoiceGroupCategory = "Food";
+
         Dialog dialog = new Dialog();
-        dialog.setHeaderTitle("Edit Choice Group");
+        dialog.setHeaderTitle(creatingNewGroup ? "Add Choice Group" : "Edit Choice Group");
 
         VerticalLayout content = new VerticalLayout();
         content.setPadding(false);
@@ -2535,6 +2667,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         TextField nameField = new TextField("Name");
         nameField.setWidthFull();
+        nameField.setAutoselect(true);
         nameField.setValue(group.getName() == null ? "" : group.getName());
         nameField.setHelperText("Eg. Extra toppings, Choose type");
 
@@ -2560,12 +2693,19 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         majorGroupField.setWidthFull();
         majorGroupField.setItems(majorGroupOptions);
         majorGroupField.setClearButtonVisible(true);
-        String selectedMajorGroup = trimToNull(restaurantMenuEditorService.getOptionGroupMajorGroup(group.getId()));
+        String selectedMajorGroup = group.getId() == null
+            ? null
+            : trimToNull(restaurantMenuEditorService.getOptionGroupMajorGroup(group.getId()));
+        if (creatingNewGroup && !majorGroupOptions.contains(defaultChoiceGroupCategory)) {
+            majorGroupField.setItems(Stream.concat(majorGroupOptions.stream(), Stream.of(defaultChoiceGroupCategory)).toList());
+        }
         if (selectedMajorGroup != null && !majorGroupOptions.contains(selectedMajorGroup)) {
             majorGroupField.setItems(Stream.concat(majorGroupOptions.stream(), Stream.of(selectedMajorGroup)).toList());
         }
         if (selectedMajorGroup != null) {
             majorGroupField.setValue(selectedMajorGroup);
+        } else if (creatingNewGroup) {
+            majorGroupField.setValue(defaultChoiceGroupCategory);
         }
 
         ComboBox<String> taxationCategoryField = new ComboBox<>("Taxation category");
@@ -2573,12 +2713,19 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         taxationCategoryField.setItems(taxationCategoryOptions);
         taxationCategoryField.setClearButtonVisible(true);
         taxationCategoryField.setHelperText("You can add other tax rates under Data Tables / Taxation Categories List");
-        String selectedTaxationCategory = trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
+        String selectedTaxationCategory = group.getId() == null
+            ? null
+            : trimToNull(restaurantMenuEditorService.getOptionGroupTaxationCategory(group.getId()));
+        if (creatingNewGroup && !taxationCategoryOptions.contains(defaultChoiceGroupCategory)) {
+            taxationCategoryField.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(defaultChoiceGroupCategory)).toList());
+        }
         if (selectedTaxationCategory != null && !taxationCategoryOptions.contains(selectedTaxationCategory)) {
             taxationCategoryField.setItems(Stream.concat(taxationCategoryOptions.stream(), Stream.of(selectedTaxationCategory)).toList());
         }
         if (selectedTaxationCategory != null) {
             taxationCategoryField.setValue(selectedTaxationCategory);
+        } else if (creatingNewGroup) {
+            taxationCategoryField.setValue(defaultChoiceGroupCategory);
         }
 
         Runnable updateMandatoryFields = () -> {
@@ -2634,12 +2781,12 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 group.setForceMax(forceMax);
                 boolean allowQuantity = allowMultipleSameChoice.isVisible() && allowMultipleSameChoice.getValue();
                 group.setAllowQuantity(allowQuantity);
-                restaurantMenuEditorService.saveOptionGroup(group);
-                restaurantMenuEditorService.saveOptionGroupMajorGroup(group.getId(), majorGroupField.getValue());
-                restaurantMenuEditorService.saveOptionGroupTaxationCategory(group.getId(), taxationCategoryField.getValue());
+                RestaurantMenuOptionGroup savedGroup = restaurantMenuEditorService.saveOptionGroup(group);
+                restaurantMenuEditorService.saveOptionGroupMajorGroup(savedGroup.getId(), majorGroupField.getValue());
+                restaurantMenuEditorService.saveOptionGroupTaxationCategory(savedGroup.getId(), taxationCategoryField.getValue());
 
                 dialog.close();
-                showSuccess("Choice group updated");
+                showSuccess(creatingNewGroup ? "Choice group created" : "Choice group updated");
                 refreshEditorData();
             } catch (IllegalStateException ex) {
                 showError(ex.getMessage());
@@ -2649,12 +2796,18 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         dialog.add(content);
         dialog.getFooter().add(cancel, save);
+        dialog.addOpenedChangeListener(event -> {
+            if (event.isOpened() && creatingNewGroup) {
+                nameField.focus();
+            }
+        });
         dialog.open();
     }
 
     private void openChoiceDialog(RestaurantMenuOptionGroup group, RestaurantMenuOption existingOption) {
+        boolean creatingNewOption = existingOption == null;
         Dialog dialog = new Dialog();
-        dialog.setHeaderTitle(existingOption == null ? "Add choice" : "Edit choice");
+        dialog.setHeaderTitle(creatingNewOption ? "Add choice" : "Edit choice");
 
         VerticalLayout content = new VerticalLayout();
         content.setPadding(false);
@@ -2663,6 +2816,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         TextField nameField = new TextField("Choice name");
         nameField.setWidthFull();
+        nameField.setAutoselect(true);
         nameField.setValue(existingOption == null || existingOption.getName() == null ? "" : existingOption.getName());
 
         NumberField priceField = new NumberField("Price");
@@ -2718,6 +2872,11 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         dialog.add(content);
         dialog.getFooter().add(cancel, save);
+        dialog.addOpenedChangeListener(event -> {
+            if (event.isOpened() && creatingNewOption) {
+                nameField.focus();
+            }
+        });
         dialog.open();
     }
 
