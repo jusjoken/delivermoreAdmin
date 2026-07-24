@@ -1076,6 +1076,39 @@ public class RestaurantMenuEditorService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    public void saveVersionOptionGroupOrder(Long menuVersionId, List<Long> orderedGroupIds) {
+        List<RestaurantMenuOptionGroup> currentGroups = restaurantMenuOptionGroupEditorRepository
+                .findByMenuVersionIdOrderByDisplayOrderAscNameAsc(menuVersionId);
+        if (currentGroups.isEmpty()) {
+            return;
+        }
+
+        Map<Long, RestaurantMenuOptionGroup> byId = new LinkedHashMap<>();
+        for (RestaurantMenuOptionGroup group : currentGroups) {
+            if (group.getId() != null) {
+                byId.put(group.getId(), group);
+            }
+        }
+
+        List<RestaurantMenuOptionGroup> reordered = new ArrayList<>();
+        if (orderedGroupIds != null) {
+            for (Long groupId : orderedGroupIds) {
+                RestaurantMenuOptionGroup group = byId.remove(groupId);
+                if (group != null) {
+                    reordered.add(group);
+                }
+            }
+        }
+        reordered.addAll(byId.values());
+
+        for (int i = 0; i < reordered.size(); i++) {
+            reordered.get(i).setDisplayOrder(i + 1);
+        }
+
+        restaurantMenuOptionGroupEditorRepository.saveAll(reordered);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     public RestaurantMenuOptionGroup duplicateOptionGroup(Long menuVersionId, Long optionGroupId) {
         RestaurantMenuOptionGroup source = restaurantMenuOptionGroupEditorRepository.findById(optionGroupId)
                 .orElseThrow(() -> new IllegalStateException("Choice group not found: " + optionGroupId));
