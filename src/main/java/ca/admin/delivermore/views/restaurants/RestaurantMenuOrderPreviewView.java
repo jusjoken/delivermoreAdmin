@@ -115,6 +115,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
     private final HorizontalLayout headerActionsRow = new HorizontalLayout();
     private final Button showCartButton = new Button("Show Cart", VaadinIcon.CART.create());
     private final Button closeCartButton = new Button("Close", VaadinIcon.CLOSE_SMALL.create());
+    private final Checkbox ignoreVisibilityField = new Checkbox("Ignore visibility rules");
 
     private Registration browserResizeRegistration;
     private boolean mobileOverlayMode;
@@ -195,6 +196,9 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         showCartButton.setVisible(false);
         showCartButton.addClickListener(event -> openCartOverlay());
 
+        ignoreVisibilityField.setValue(false);
+        ignoreVisibilityField.addValueChangeListener(event -> reloadPreviewData());
+
         closeCartButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
         closeCartButton.setVisible(false);
         closeCartButton.addClickListener(event -> closeCartOverlay());
@@ -205,7 +209,7 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         headerActionsRow.setWidthFull();
         headerActionsRow.setAlignItems(FlexComponent.Alignment.CENTER);
         headerActionsRow.setSpacing(true);
-        headerActionsRow.add(backButton, showCartButton);
+        headerActionsRow.add(backButton, showCartButton, ignoreVisibilityField);
 
         headerLayout.setWidthFull();
         headerLayout.setPadding(false);
@@ -251,8 +255,15 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             return;
         }
 
+        reloadPreviewData();
+    }
+
+    private void reloadPreviewData() {
+        if (restaurantId == null) {
+            return;
+        }
         try {
-            previewData = previewService.loadPreviewData(restaurantId);
+            previewData = previewService.loadPreviewData(restaurantId, ignoreVisibilityField.getValue());
         } catch (IllegalStateException ex) {
             clearView(ex.getMessage());
             return;
@@ -455,12 +466,17 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
 
     private Component buildItemCard(ItemData item) {
         VerticalLayout card = new VerticalLayout();
+        boolean hiddenByVisibilityRule = ignoreVisibilityField.getValue() && item.hiddenByVisibilityRule();
         card.setPadding(true);
         card.setSpacing(true);
         card.setWidthFull();
-        card.getStyle().set("border", "2px solid var(--lumo-contrast-20pct)");
+        card.getStyle().set("border", hiddenByVisibilityRule
+            ? "2px solid var(--lumo-warning-color-50pct)"
+            : "2px solid var(--lumo-contrast-20pct)");
         card.getStyle().set("border-radius", "var(--lumo-border-radius-l)");
-        card.getStyle().set("background", "var(--lumo-base-color)");
+        card.getStyle().set("background", hiddenByVisibilityRule
+            ? "color-mix(in srgb, var(--lumo-warning-color) 10%, var(--lumo-base-color))"
+            : "var(--lumo-base-color)");
         card.getStyle().set("cursor", item.outOfStock() ? "not-allowed" : "pointer");
         card.getStyle().set("opacity", item.outOfStock() ? "0.7" : "1");
         card.getStyle().set("transition", "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease");
@@ -469,12 +485,16 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
             card.getElement().addEventListener("mouseenter", event -> {
                 card.getStyle().set("transform", "translateY(-2px)");
                 card.getStyle().set("box-shadow", "var(--lumo-box-shadow-s)");
-                card.getStyle().set("border-color", "var(--lumo-primary-color-50pct)");
+                card.getStyle().set("border-color", hiddenByVisibilityRule
+                    ? "var(--lumo-warning-color)"
+                    : "var(--lumo-primary-color-50pct)");
             });
             card.getElement().addEventListener("mouseleave", event -> {
                 card.getStyle().set("transform", "translateY(0)");
                 card.getStyle().set("box-shadow", "var(--lumo-box-shadow-xs)");
-                card.getStyle().set("border-color", "var(--lumo-contrast-20pct)");
+                card.getStyle().set("border-color", hiddenByVisibilityRule
+                    ? "var(--lumo-warning-color-50pct)"
+                    : "var(--lumo-contrast-20pct)");
             });
             card.addClickListener(event -> openItemDialog(item));
         }
@@ -530,6 +550,9 @@ public class RestaurantMenuOrderPreviewView extends VerticalLayout implements Be
         HorizontalLayout badges = new HorizontalLayout();
         badges.setSpacing(true);
         badges.setPadding(false);
+        if (hiddenByVisibilityRule) {
+            badges.add(createBadge("Hidden by visibility", "warning"));
+        }
         if (item.outOfStock()) {
             badges.add(createBadge("No stock", "error"));
         }

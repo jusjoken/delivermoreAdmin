@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 import org.springframework.stereotype.Service;
 
@@ -58,6 +59,7 @@ public class RestaurantMenuOrderPreviewService {
             double basePrice,
             String taxationCategory,
             boolean outOfStock,
+            boolean hiddenByVisibilityRule,
             Set<String> tags,
             List<SizeData> sizes,
             List<OptionGroupData> optionGroups) {
@@ -102,6 +104,10 @@ public class RestaurantMenuOrderPreviewService {
     }
 
     public PreviewData loadPreviewData(Long restaurantId) {
+        return loadPreviewData(restaurantId, false);
+    }
+
+    public PreviewData loadPreviewData(Long restaurantId, boolean ignoreVisibility) {
         Restaurant restaurant = restaurantMenuEditorService.getRestaurant(restaurantId);
         if (restaurant == null) {
             throw new IllegalStateException("Restaurant not found for id " + restaurantId);
@@ -112,12 +118,37 @@ public class RestaurantMenuOrderPreviewService {
             throw new IllegalStateException("No menu version available for restaurant id " + restaurantId);
         }
 
+        LocalDateTime now = LocalDateTime.now();
         List<CategoryData> categories = new ArrayList<>();
         for (RestaurantMenuCategory category : restaurantMenuEditorService.listCategories(menuVersion.getId())) {
-            List<ItemData> items = restaurantMenuEditorService.listItemsForCategory(menuVersion.getId(), category.getId())
-                    .stream()
-                    .map(item -> toItemData(menuVersion, category, item))
-                    .toList();
+            boolean categoryVisibleNow = MenuVisibilitySupport.isVisibleNow(
+                    category.getActive(),
+                    category.getActiveBegin(),
+                    category.getActiveEnd(),
+                    category.getActiveDays(),
+                    now);
+            if (!ignoreVisibility && !categoryVisibleNow) {
+                continue;
+            }
+
+            List<ItemData> items = new ArrayList<>();
+            for (RestaurantMenuItem item : restaurantMenuEditorService.listItemsForCategory(menuVersion.getId(), category.getId())) {
+                boolean itemVisibleNow = MenuVisibilitySupport.isVisibleNow(
+                        item.getActive(),
+                        item.getActiveBegin(),
+                        item.getActiveEnd(),
+                        item.getActiveDays(),
+                        now);
+                if (!ignoreVisibility && !itemVisibleNow) {
+                    continue;
+                }
+
+                boolean hiddenByVisibilityRule = !categoryVisibleNow || !itemVisibleNow;
+                items.add(toItemData(menuVersion, category, item, hiddenByVisibilityRule));
+            }
+            if (items.isEmpty()) {
+                continue;
+            }
                 categories.add(new CategoryData(
                     category.getId(),
                     category.getName(),
@@ -181,7 +212,11 @@ public class RestaurantMenuOrderPreviewService {
                 restaurantMenuEditorService.getCheckoutTimeoutMinutes());
     }
 
-    private ItemData toItemData(RestaurantMenuVersion menuVersion, RestaurantMenuCategory category, RestaurantMenuItem item) {
+    private ItemData toItemData(
+            RestaurantMenuVersion menuVersion,
+            RestaurantMenuCategory category,
+            RestaurantMenuItem item,
+            boolean hiddenByVisibilityRule) {
         RestaurantMenuEditorService.ItemSettingsSnapshot settings = restaurantMenuEditorService.loadItemSettings(item);
 
         List<SizeData> sizes = restaurantMenuEditorService.listSizesForItem(menuVersion.getId(), item.getId())
@@ -203,6 +238,7 @@ public class RestaurantMenuOrderPreviewService {
                 basePrice == null ? 0d : basePrice,
                 defaultTaxationCategory(restaurantMenuEditorService.getItemTaxationCategory(item.getId())),
                 settings.outOfStock(),
+                hiddenByVisibilityRule,
                 new LinkedHashSet<>(settings.tags()),
                 sizes,
                 loadOptionGroupsForItem(menuVersion.getId(), category.getId(), item.getId()));

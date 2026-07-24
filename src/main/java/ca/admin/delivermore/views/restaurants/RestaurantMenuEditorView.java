@@ -2,6 +2,10 @@ package ca.admin.delivermore.views.restaurants;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -12,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import com.vaadin.flow.component.UI;
@@ -22,6 +27,7 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.dnd.DragSource;
 import com.vaadin.flow.component.dnd.DropEffect;
 import com.vaadin.flow.component.dnd.DropTarget;
@@ -49,6 +55,7 @@ import com.vaadin.flow.component.splitlayout.SplitLayout;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.data.provider.hierarchy.AbstractBackEndHierarchicalDataProvider;
 import com.vaadin.flow.data.provider.hierarchy.HierarchicalQuery;
@@ -69,6 +76,7 @@ import ca.admin.delivermore.collector.data.service.TeamsRepository;
 import ca.admin.delivermore.components.custom.MenuImagePickerDialog;
 import ca.admin.delivermore.data.service.MenuImageAssetService;
 import ca.admin.delivermore.data.service.MenuImageSlot;
+import ca.admin.delivermore.data.service.MenuVisibilitySupport;
 import ca.admin.delivermore.data.service.DeliveryZoneService;
 import ca.admin.delivermore.data.service.RestaurantMenuEditorService;
 import ca.admin.delivermore.views.MainLayout;
@@ -125,11 +133,25 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         UNASSIGNED
     }
 
+    private enum VisibilityDialogMode {
+        ALWAYS,
+        HIDE_FROM_MENU,
+        HIDE_UNTIL,
+        SHOW_WEEKLY,
+        SHOW_DATE_RANGE
+    }
+
     private record ActionMenuEntry(VaadinIcon icon, String label, Runnable action, boolean destructive) {
     }
 
     private record TreeStatusBadge(String label, String colorToken) {
     }
+
+    private static final String VISIBILITY_BADGE_COLOR_TOKEN = "var(--lumo-warning-text-color)";
+    private static final DateTimeFormatter BADGE_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mma", Locale.CANADA)
+        .withLocale(Locale.CANADA);
+    private static final DateTimeFormatter BADGE_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("MMM d h:mma", Locale.CANADA)
+        .withLocale(Locale.CANADA);
 
     private final RestaurantMenuEditorService restaurantMenuEditorService;
     private final MenuImageAssetService menuImageAssetService;
@@ -1670,17 +1692,23 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
 
         if (CATEGORY_TYPE.equals(node.type())) {
             RestaurantMenuCategory category = (RestaurantMenuCategory) node.data();
-            if (Boolean.FALSE.equals(category.getActive())) {
-                badges.add(new TreeStatusBadge("Hidden", "var(--lumo-contrast-70pct)"));
-            }
+            MenuVisibilitySupport.VisibilitySettings visibility = MenuVisibilitySupport.read(
+                    category.getActive(),
+                    category.getActiveBegin(),
+                    category.getActiveEnd(),
+                    category.getActiveDays());
+            badges.addAll(buildVisibilityBadges(visibility));
             return badges;
         }
 
         if (ITEM_TYPE.equals(node.type())) {
             RestaurantMenuItem item = (RestaurantMenuItem) node.data();
-            if (Boolean.FALSE.equals(item.getActive())) {
-                badges.add(new TreeStatusBadge("Hidden", "var(--lumo-contrast-70pct)"));
-            }
+            MenuVisibilitySupport.VisibilitySettings visibility = MenuVisibilitySupport.read(
+                    item.getActive(),
+                    item.getActiveBegin(),
+                    item.getActiveEnd(),
+                    item.getActiveDays());
+            badges.addAll(buildVisibilityBadges(visibility));
             if (Boolean.TRUE.equals(item.getOutOfStock())) {
                 badges.add(new TreeStatusBadge("NoStock", "var(--lumo-error-text-color)"));
             }
@@ -1695,6 +1723,112 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         }
 
         return badges;
+    }
+
+    private List<TreeStatusBadge> buildVisibilityBadges(MenuVisibilitySupport.VisibilitySettings visibility) {
+        List<TreeStatusBadge> badges = new ArrayList<>();
+        switch (visibility.mode()) {
+            case ALWAYS -> {
+            }
+            case HIDE_FROM_MENU -> badges.add(new TreeStatusBadge("Hidden", VISIBILITY_BADGE_COLOR_TOKEN));
+            case HIDE_UNTIL -> {
+                String until = formatBadgeDateTime(visibility.untilDateTime());
+                badges.add(new TreeStatusBadge(until == null ? "Hidden until" : "Until " + until, VISIBILITY_BADGE_COLOR_TOKEN));
+            }
+            case SHOW_WEEKLY -> {
+                String daySummary = formatDaySummary(visibility.daysMask());
+                String window = formatTimeWindow(visibility.startTime(), visibility.endTime());
+                String text = (daySummary + " " + window).trim();
+                badges.add(new TreeStatusBadge(text.isBlank() ? "Scheduled" : text, VISIBILITY_BADGE_COLOR_TOKEN));
+            }
+            case SHOW_DATE_RANGE -> {
+                String from = formatBadgeDateTime(visibility.fromDateTime());
+                String until = formatBadgeDateTime(visibility.untilDateTime());
+                if (from == null && until == null) {
+                    badges.add(new TreeStatusBadge("Date range", VISIBILITY_BADGE_COLOR_TOKEN));
+                } else {
+                    String text = (from == null ? "?" : from) + "-" + (until == null ? "?" : until);
+                    badges.add(new TreeStatusBadge(text, VISIBILITY_BADGE_COLOR_TOKEN));
+                }
+            }
+        }
+        return badges;
+    }
+
+    private String formatTimeWindow(LocalTime start, LocalTime end) {
+        if (start == null && end == null) {
+            return "";
+        }
+        if (start == null) {
+            return "-" + formatBadgeTime(end);
+        }
+        if (end == null) {
+            return formatBadgeTime(start) + "+";
+        }
+        return formatBadgeTime(start) + "-" + formatBadgeTime(end);
+    }
+
+    private String formatBadgeTime(LocalTime time) {
+        if (time == null) {
+            return "";
+        }
+        return normalizeBadgeDateTimeText(BADGE_TIME_FORMAT.format(time));
+    }
+
+    private String formatBadgeDateTime(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        return normalizeBadgeDateTimeText(BADGE_DATE_TIME_FORMAT.format(value));
+    }
+
+    private String normalizeBadgeDateTimeText(String formatted) {
+        if (formatted == null || formatted.isBlank()) {
+            return formatted;
+        }
+        return formatted
+            .replace("a.m.", "AM")
+            .replace("p.m.", "PM")
+            .replace("am", "AM")
+            .replace("pm", "PM");
+    }
+
+    private String formatDaySummary(int daysMask) {
+        int normalized = MenuVisibilitySupport.normalizeDays(daysMask);
+        if (normalized == MenuVisibilitySupport.DAYS_ALL) {
+            return "Daily";
+        }
+
+        List<String> days = new ArrayList<>();
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.MONDAY)) {
+            days.add("Mon");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.TUESDAY)) {
+            days.add("Tue");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.WEDNESDAY)) {
+            days.add("Wed");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.THURSDAY)) {
+            days.add("Thu");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.FRIDAY)) {
+            days.add("Fri");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.SATURDAY)) {
+            days.add("Sat");
+        }
+        if (MenuVisibilitySupport.includesDay(normalized, DayOfWeek.SUNDAY)) {
+            days.add("Sun");
+        }
+
+        if (days.isEmpty()) {
+            return "Days";
+        }
+        if (days.size() <= 3) {
+            return String.join(",", days);
+        }
+        return days.get(0) + "-" + days.get(days.size() - 1);
     }
 
     private Span createTreeStatusBadge(TreeStatusBadge badgeDef) {
@@ -1732,6 +1866,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             actions.add(buildActionsMenu(List.of(
                     new ActionMenuEntry(VaadinIcon.PLUS, "Add item in group", () -> addItemToCategory(category), false),
                     new ActionMenuEntry(VaadinIcon.PENCIL, "Edit category", () -> openEditDialog(node), false),
+                new ActionMenuEntry(VaadinIcon.EYE, "Visibility...", () -> openVisibilityDialog(node), false),
                     new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate category", () -> confirmAction(
                             "Duplicate category",
                             "Create a copy of category '" + category.getName() + "'?",
@@ -1762,6 +1897,7 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             actions.add(buildActionsMenu(List.of(
                     new ActionMenuEntry(VaadinIcon.PLUS, "Add size", () -> addSizeToItem(item), false),
                     new ActionMenuEntry(VaadinIcon.PENCIL, "Edit item", () -> openEditDialog(node), false),
+                new ActionMenuEntry(VaadinIcon.EYE, "Visibility...", () -> openVisibilityDialog(node), false),
                     new ActionMenuEntry(VaadinIcon.COPY_O, "Duplicate item", () -> confirmAction(
                             "Duplicate item",
                             "Create a copy of item '" + item.getName() + "'?",
@@ -1889,9 +2025,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         nameField.setWidthFull();
         content.add(nameField);
 
-        Checkbox activeField = new Checkbox("Visible/Active");
-        content.add(activeField);
-
         final Checkbox outOfStockField;
         final ItemSettingsModel itemSettingsModel;
 
@@ -1903,7 +2036,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         if (CATEGORY_TYPE.equals(selected.type())) {
             RestaurantMenuCategory category = (RestaurantMenuCategory) selected.data();
             nameField.setValue(category.getName() == null ? "" : category.getName());
-            activeField.setValue(!Boolean.FALSE.equals(category.getActive()));
 
             TextArea description = new TextArea("Description");
             description.setWidthFull();
@@ -1920,7 +2052,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
         } else {
             RestaurantMenuItem item = (RestaurantMenuItem) selected.data();
             nameField.setValue(item.getName() == null ? "" : item.getName());
-            activeField.setValue(!Boolean.FALSE.equals(item.getActive()));
 
             itemSettingsModel = readItemSettings(item);
 
@@ -1988,7 +2119,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 if (CATEGORY_TYPE.equals(selected.type())) {
                     RestaurantMenuCategory category = (RestaurantMenuCategory) selected.data();
                     category.setName(newName);
-                    category.setActive(activeField.getValue());
                     if (categoryDescriptionField != null) {
                         String newDescription = categoryDescriptionField.getValue();
                         category.setDescription(newDescription == null || newDescription.trim().isEmpty() ? null : newDescription.trim());
@@ -1997,7 +2127,6 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
                 } else {
                     RestaurantMenuItem item = (RestaurantMenuItem) selected.data();
                     item.setName(newName);
-                    item.setActive(activeField.getValue());
                     if (outOfStockField != null && itemSettingsModel != null) {
                         itemSettingsModel.outOfStock = outOfStockField.getValue();
                         applyItemSettings(item, itemSettingsModel);
@@ -2035,6 +2164,264 @@ public class RestaurantMenuEditorView extends VerticalLayout implements BeforeEn
             } catch (IllegalStateException ex) {
                 showError(ex.getMessage());
             }
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        dialog.add(content);
+        dialog.getFooter().add(cancel, save);
+        dialog.open();
+    }
+
+    private void openVisibilityDialog(MenuTreeNode selected) {
+        if (!CATEGORY_TYPE.equals(selected.type()) && !ITEM_TYPE.equals(selected.type())) {
+            showError("Visibility can only be edited for groups and items");
+            return;
+        }
+
+        boolean categoryNode = CATEGORY_TYPE.equals(selected.type());
+        String nodeLabel = selected.displayName() == null ? "" : selected.displayName();
+        MenuVisibilitySupport.VisibilitySettings currentVisibility;
+        if (categoryNode) {
+            RestaurantMenuCategory category = (RestaurantMenuCategory) selected.data();
+            currentVisibility = MenuVisibilitySupport.read(
+                    category.getActive(),
+                    category.getActiveBegin(),
+                    category.getActiveEnd(),
+                    category.getActiveDays());
+        } else {
+            RestaurantMenuItem item = (RestaurantMenuItem) selected.data();
+            currentVisibility = MenuVisibilitySupport.read(
+                    item.getActive(),
+                    item.getActiveBegin(),
+                    item.getActiveEnd(),
+                    item.getActiveDays());
+        }
+
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Visibility: " + nodeLabel);
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+        UIUtilities.applyDialogWidth(dialog, content, UIUtilities.DialogWidthPreset.MEDIUM);
+
+        RadioButtonGroup<VisibilityDialogMode> modeField = new RadioButtonGroup<>();
+        modeField.setLabel("Mode");
+        modeField.setItems(
+                VisibilityDialogMode.ALWAYS,
+                VisibilityDialogMode.HIDE_FROM_MENU,
+                VisibilityDialogMode.HIDE_UNTIL,
+                VisibilityDialogMode.SHOW_WEEKLY,
+                VisibilityDialogMode.SHOW_DATE_RANGE);
+        modeField.setItemLabelGenerator(mode -> switch (mode) {
+            case ALWAYS -> "Always";
+            case HIDE_FROM_MENU -> "Hide: From menu";
+            case HIDE_UNTIL -> "Hide: Until date/time";
+            case SHOW_WEEKLY -> "Show: Only from time window";
+            case SHOW_DATE_RANGE -> "Show: Date/time range";
+        });
+
+        DateTimePicker hideUntilField = new DateTimePicker("Hide until");
+        hideUntilField.setStep(java.time.Duration.ofMinutes(5));
+        hideUntilField.setWidthFull();
+
+        TimePicker weeklyStartField = new TimePicker("Start time");
+        weeklyStartField.setStep(java.time.Duration.ofMinutes(5));
+        weeklyStartField.setWidthFull();
+
+        TimePicker weeklyEndField = new TimePicker("End time");
+        weeklyEndField.setStep(java.time.Duration.ofMinutes(5));
+        weeklyEndField.setWidthFull();
+
+        Checkbox mondayField = new Checkbox("Mon");
+        Checkbox tuesdayField = new Checkbox("Tue");
+        Checkbox wednesdayField = new Checkbox("Wed");
+        Checkbox thursdayField = new Checkbox("Thu");
+        Checkbox fridayField = new Checkbox("Fri");
+        Checkbox saturdayField = new Checkbox("Sat");
+        Checkbox sundayField = new Checkbox("Sun");
+        mondayField.setValue(true);
+        tuesdayField.setValue(true);
+        wednesdayField.setValue(true);
+        thursdayField.setValue(true);
+        fridayField.setValue(true);
+        saturdayField.setValue(true);
+        sundayField.setValue(true);
+
+        HorizontalLayout weekdayRow = new HorizontalLayout(
+                mondayField,
+                tuesdayField,
+                wednesdayField,
+                thursdayField,
+                fridayField,
+                saturdayField,
+                sundayField);
+        weekdayRow.setSpacing(true);
+        weekdayRow.setPadding(false);
+
+        DateTimePicker showFromField = new DateTimePicker("Show from");
+        showFromField.setStep(java.time.Duration.ofMinutes(5));
+        showFromField.setWidthFull();
+
+        DateTimePicker showUntilField = new DateTimePicker("Show until");
+        showUntilField.setStep(java.time.Duration.ofMinutes(5));
+        showUntilField.setWidthFull();
+
+        VerticalLayout hideUntilBlock = new VerticalLayout(hideUntilField);
+        hideUntilBlock.setPadding(false);
+        hideUntilBlock.setSpacing(false);
+
+        VerticalLayout weeklyBlock = new VerticalLayout(weeklyStartField, weeklyEndField, weekdayRow);
+        weeklyBlock.setPadding(false);
+        weeklyBlock.setSpacing(true);
+
+        VerticalLayout dateRangeBlock = new VerticalLayout(showFromField, showUntilField);
+        dateRangeBlock.setPadding(false);
+        dateRangeBlock.setSpacing(true);
+
+        Runnable toggleBlocks = () -> {
+            VisibilityDialogMode mode = modeField.getValue();
+            hideUntilBlock.setVisible(mode == VisibilityDialogMode.HIDE_UNTIL);
+            weeklyBlock.setVisible(mode == VisibilityDialogMode.SHOW_WEEKLY);
+            dateRangeBlock.setVisible(mode == VisibilityDialogMode.SHOW_DATE_RANGE);
+        };
+
+        switch (currentVisibility.mode()) {
+            case ALWAYS -> modeField.setValue(VisibilityDialogMode.ALWAYS);
+            case HIDE_FROM_MENU -> modeField.setValue(VisibilityDialogMode.HIDE_FROM_MENU);
+            case HIDE_UNTIL -> {
+                modeField.setValue(VisibilityDialogMode.HIDE_UNTIL);
+                hideUntilField.setValue(currentVisibility.untilDateTime());
+            }
+            case SHOW_WEEKLY -> {
+                modeField.setValue(VisibilityDialogMode.SHOW_WEEKLY);
+                weeklyStartField.setValue(currentVisibility.startTime());
+                weeklyEndField.setValue(currentVisibility.endTime());
+                int daysMask = MenuVisibilitySupport.normalizeDays(currentVisibility.daysMask());
+                mondayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.MONDAY));
+                tuesdayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.TUESDAY));
+                wednesdayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.WEDNESDAY));
+                thursdayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.THURSDAY));
+                fridayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.FRIDAY));
+                saturdayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.SATURDAY));
+                sundayField.setValue(MenuVisibilitySupport.includesDay(daysMask, DayOfWeek.SUNDAY));
+            }
+            case SHOW_DATE_RANGE -> {
+                modeField.setValue(VisibilityDialogMode.SHOW_DATE_RANGE);
+                showFromField.setValue(currentVisibility.fromDateTime());
+                showUntilField.setValue(currentVisibility.untilDateTime());
+            }
+        }
+
+        modeField.addValueChangeListener(event -> toggleBlocks.run());
+        toggleBlocks.run();
+
+        content.add(modeField, hideUntilBlock, weeklyBlock, dateRangeBlock);
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button save = new Button("Save", event -> {
+            VisibilityDialogMode selectedMode = modeField.getValue();
+            if (selectedMode == null) {
+                showError("Visibility mode is required");
+                return;
+            }
+
+            MenuVisibilitySupport.VisibilitySettings newVisibility = null;
+            switch (selectedMode) {
+                case ALWAYS -> newVisibility = new MenuVisibilitySupport.VisibilitySettings(
+                        MenuVisibilitySupport.VisibilityMode.ALWAYS,
+                        null,
+                        null,
+                        MenuVisibilitySupport.DAYS_ALL,
+                        null,
+                        null);
+                case HIDE_FROM_MENU -> newVisibility = new MenuVisibilitySupport.VisibilitySettings(
+                        MenuVisibilitySupport.VisibilityMode.HIDE_FROM_MENU,
+                        null,
+                        null,
+                        MenuVisibilitySupport.DAYS_NONE,
+                        null,
+                        null);
+                case HIDE_UNTIL -> {
+                    LocalDateTime until = hideUntilField.getValue();
+                    if (until == null) {
+                        showError("Hide until date/time is required");
+                        return;
+                    }
+                    newVisibility = new MenuVisibilitySupport.VisibilitySettings(
+                            MenuVisibilitySupport.VisibilityMode.HIDE_UNTIL,
+                            null,
+                            null,
+                            MenuVisibilitySupport.DAYS_NONE,
+                            null,
+                            until);
+                }
+                case SHOW_WEEKLY -> {
+                    LocalTime start = weeklyStartField.getValue();
+                    LocalTime end = weeklyEndField.getValue();
+                    if (start == null || end == null) {
+                        showError("Weekly mode requires both start and end time");
+                        return;
+                    }
+                    int dayMask = MenuVisibilitySupport.dayMaskFromSelection(
+                            mondayField.getValue(),
+                            tuesdayField.getValue(),
+                            wednesdayField.getValue(),
+                            thursdayField.getValue(),
+                            fridayField.getValue(),
+                            saturdayField.getValue(),
+                            sundayField.getValue());
+                    if (dayMask == MenuVisibilitySupport.DAYS_NONE) {
+                        showError("Select at least one day for weekly visibility");
+                        return;
+                    }
+                    newVisibility = new MenuVisibilitySupport.VisibilitySettings(
+                            MenuVisibilitySupport.VisibilityMode.SHOW_WEEKLY,
+                            start,
+                            end,
+                            dayMask,
+                            null,
+                            null);
+                }
+                case SHOW_DATE_RANGE -> {
+                    LocalDateTime from = showFromField.getValue();
+                    LocalDateTime until = showUntilField.getValue();
+                    if (from == null || until == null) {
+                        showError("Show from and show until are required");
+                        return;
+                    }
+                    if (until.isBefore(from)) {
+                        showError("Show until must be after show from");
+                        return;
+                    }
+                    newVisibility = new MenuVisibilitySupport.VisibilitySettings(
+                            MenuVisibilitySupport.VisibilityMode.SHOW_DATE_RANGE,
+                            null,
+                            null,
+                            MenuVisibilitySupport.DAYS_ALL,
+                            from,
+                            until);
+                }
+            }
+
+            if (newVisibility == null) {
+                showError("Unable to resolve visibility settings");
+                return;
+            }
+
+            if (categoryNode) {
+                RestaurantMenuCategory category = (RestaurantMenuCategory) selected.data();
+                MenuVisibilitySupport.applyToCategory(category, newVisibility);
+                restaurantMenuEditorService.saveCategory(category);
+            } else {
+                RestaurantMenuItem item = (RestaurantMenuItem) selected.data();
+                MenuVisibilitySupport.applyToItem(item, newVisibility);
+                restaurantMenuEditorService.saveItem(item);
+            }
+
+            dialog.close();
+            showSuccess("Visibility saved");
+            refreshEditorData();
         });
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
